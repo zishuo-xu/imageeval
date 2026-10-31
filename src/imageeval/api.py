@@ -276,5 +276,9 @@ def create_app(cfg: AppConfig, provider=None) -> FastAPI:
             raise HTTPException(404, str(exc)) from exc
         return HTMLResponse(render_report_html(summary, cfg.data_dir))
 
+    @app.get("/")
+    def index_page() -> FileResponse:
+        return FileResponse(WEB_DIR / "index.html")
+
     app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
     return app

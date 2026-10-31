@@ -1,0 +1,21 @@
+from fastapi.testclient import TestClient
+
+from imageeval.api import create_app
+from imageeval.judge.fake import FakeProvider
+
+
+def test_index_and_static_assets(cfg) -> None:
+    app = create_app(cfg, provider=FakeProvider())
+    with TestClient(app) as client:
+        index = client.get("/")
+        assert index.status_code == 200
+        for marker in ("btn-accept", "requirements", "image", "run-select"):
+            assert marker in index.text
+
+        css = client.get("/static/style.css")
+        assert css.status_code == 200
+        assert "--accent" in css.text
+
+        js = client.get("/static/review.js")
+        assert js.status_code == 200
+        assert "loadQueue" in js.text

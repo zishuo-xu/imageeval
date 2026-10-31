@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>生图评测 · 标注台</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <strong>生图评测</strong>
+  <select id="batch-select" title="导入批次"></select>
+  <input id="run-name" placeholder="评测名称" style="width: 140px">
+  <button id="btn-create-run">新建评测</button>
+  <select id="run-select" title="选择评测"></select>
+  <button id="btn-start" class="primary">开始评分</button>
+  <button id="btn-pause">暂停</button>
+  <span id="run-progress" class="hint"></span>
+  <a id="report-link" href="#" target="_blank">查看报告</a>
+  <button id="btn-import">导入数据</button>
+</header>
+
+<main class="review">
+  <aside class="filters">
+    <label>筛选</label>
+    <select id="filter">
+      <option value="pending">待复核</option>
+      <option value="reviewed">已复核</option>
+      <option value="skipped">已跳过</option>
+      <option value="all">全部</option>
+    </select>
+    <label>排序</label>
+    <select id="order">
+      <option value="default">导入顺序</option>
+      <option value="low_ai">AI 低分优先</option>
+      <option value="max_correction">修正幅度最大</option>
+      <option value="random">随机</option>
+    </select>
+    <button id="btn-refresh">刷新队列</button>
+    <div id="progress-text" class="hint"></div>
+    <div class="hint">快捷键：A 接受 · J/K 切换 · 1-5 打分 · Enter 保存 · S 跳过 · F 适应图片</div>
+  </aside>
+
+  <section class="viewer">
+    <div id="image-wrap"><img id="image" alt=""></div>
+  </section>
+
+  <section class="panel">
+    <div id="state-badge" class="badge"></div>
+    <h2>Query</h2>
+    <p id="query"></p>
+
+    <h2>AI 需求清单</h2>
+    <ul id="requirements" class="requirements"></ul>
+
+    <h2>评分（1-5）</h2>
+    <div class="score-row" data-dim="adherence">
+      <label>需求遵循</label><input id="score-adherence" type="number" min="1" max="5" step="1">
+    </div>
+    <div class="score-row" data-dim="quality">
+      <label>视觉质量</label><input id="score-quality" type="number" min="1" max="5" step="1">
+    </div>
+    <div class="score-row" data-dim="aesthetics">
+      <label>美学</label><input id="score-aesthetics" type="number" min="1" max="5" step="1">
+    </div>
+
+    <details><summary class="hint">子项理由</summary><div id="subscores" class="hint"></div></details>
+    <textarea id="note" placeholder="备注（可选）" rows="2"></textarea>
+
+    <div class="actions">
+      <button id="btn-accept" class="primary">接受全部 (A)</button>
+      <button id="btn-save">保存修正 (Enter)</button>
+      <button id="btn-skip">跳过 (S)</button>
+    </div>
+    <div id="message" class="hint"></div>
+  </section>
+</main>
+
+<div id="modal-import" class="modal hidden">
+  <div class="card">
+    <h2 style="margin: 0">导入数据</h2>
+    <input id="import-file" type="file" accept=".csv,.jsonl,.ndjson">
+    <input id="import-root" placeholder="图片根目录（本地路径图片必填）">
+    <label><input id="import-download" type="checkbox"> 下载 URL 图片</label>
+    <div class="actions">
+      <button id="btn-import-submit" class="primary">导入</button>
+      <button id="btn-import-cancel">取消</button>
+    </div>
+    <pre id="import-result" class="hint"></pre>
+  </div>
+</div>
+
+<script src="/static/api.js"></script>
+<script src="/static/app.js"></script>
+<script src="/static/review.js"></script>
+</body>
+</html>

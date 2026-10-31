@@ -1,0 +1,26 @@
+version: v1
+anchors:
+  1: 严重问题，不可用
+  2: 明显问题，需要重做
+  3: 基本可用，存在可见瑕疵
+  4: 良好，仅有轻微瑕疵
+  5: 优秀，无明显问题
+dimensions:
+  adherence:
+    weight: 0.40
+  quality:
+    weight: 0.35
+    subscores:
+      clarity: 0.20
+      artifacts: 0.30
+      text_render: 0.10
+      physics: 0.20
+      consistency: 0.20
+  aesthetics:
+    weight: 0.25
+    subscores:
+      composition: 0.20
+      color: 0.20
+      lighting: 0.20
+      texture: 0.20
+      appeal: 0.20

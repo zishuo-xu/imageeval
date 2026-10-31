@@ -18,10 +18,17 @@ def test_index_and_static_assets(cfg) -> None:
             "error-banner",
             'value="error"',
             "reason-general",
+            "run-message",
         ):
             assert marker in index.text
         for script in ("/static/api.js", "/static/app.js", "/static/review.js"):
             assert script in index.text
+
+        app_js = client.get("/static/app.js")
+        assert app_js.status_code == 200
+        assert "updateControls" in app_js.text
+        assert "flashMessage" in app_js.text
+        assert "评分已完成" in app_js.text
 
         css = client.get("/static/style.css")
         assert css.status_code == 200

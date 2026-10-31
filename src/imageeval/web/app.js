@@ -1,4 +1,27 @@
-const app = { runId: null, pollTimer: null, lastStatus: null };
+const app = { runId: null, pollTimer: null, lastStatus: null, lastRun: null, messageTimer: null };
+
+function flashMessage(text) {
+  const node = qs("run-message");
+  node.textContent = text;
+  clearTimeout(app.messageTimer);
+  app.messageTimer = setTimeout(() => {
+    node.textContent = "";
+  }, 6000);
+}
+
+function updateControls(run) {
+  const start = qs("btn-start");
+  const pause = qs("btn-pause");
+  const finished = run.status === "completed" && run.failed === 0;
+  start.disabled = run.status === "running" || finished;
+  start.textContent = finished
+    ? "评分已完成"
+    : run.status === "completed" && run.failed > 0
+      ? "重试失败样本"
+      : "开始评分";
+  start.title = finished ? "该评测已全部评分完成；如需重跑请新建评测" : "";
+  pause.disabled = run.status !== "running";
+}
 
 var escapeHtml = (value) =>
   String(value ?? "").replace(/[&<>"']/g, (ch) => ({
@@ -32,6 +55,9 @@ async function refreshRuns() {
 
 function setRun(runId) {
   app.runId = runId;
+  app.lastRun = null;
+  app.lastStatus = null;
+  qs("run-message").textContent = "";
   qs("report-link").href = `/report?run_id=${runId}`;
   window.dispatchEvent(new CustomEvent("run-changed", { detail: { runId } }));
   pollRun();
@@ -43,7 +69,9 @@ async function pollRun() {
   try {
     const data = await getJSON(`/api/runs/${app.runId}`);
     const run = data.run;
+    app.lastRun = run;
     qs("run-progress").textContent = `${run.status} · ${run.done}/${run.total} · 失败 ${run.failed}`;
+    updateControls(run);
     if (run.status !== app.lastStatus) {
       app.lastStatus = run.status;
       window.dispatchEvent(new CustomEvent("run-status", { detail: { run } }));
@@ -68,17 +96,37 @@ async function createRun() {
   await refreshRuns();
   qs("run-select").value = result.run_id;
   setRun(result.run_id);
+  flashMessage("评测已创建，点击开始评分");
 }
 
 async function startRun() {
   if (!app.runId) return;
-  await postJSON(`/api/runs/${app.runId}/start`, {});
+  const run = app.lastRun;
+  if (run && run.status === "completed" && run.failed === 0) {
+    flashMessage("该评测已全部评分完成，无需重复评分；如需重跑请新建评测");
+    return;
+  }
+  try {
+    await postJSON(`/api/runs/${app.runId}/start`, {});
+    flashMessage(run && run.failed > 0 ? "正在重试失败样本…" : "评分任务已提交…");
+  } catch (err) {
+    flashMessage(`启动失败：${err.message}`);
+  }
   pollRun();
 }
 
 async function pauseRun() {
   if (!app.runId) return;
-  await postJSON(`/api/runs/${app.runId}/pause`, {});
+  if (!app.lastRun || app.lastRun.status !== "running") {
+    flashMessage("当前没有正在执行的评分任务");
+    return;
+  }
+  try {
+    await postJSON(`/api/runs/${app.runId}/pause`, {});
+    flashMessage("已暂停，点击开始评分可继续");
+  } catch (err) {
+    flashMessage(`暂停失败：${err.message}`);
+  }
   pollRun();
 }
 

@@ -1,0 +1,21 @@
+[server]
+host = "127.0.0.1"
+port = 8765
+
+[judge]
+provider = "openai_compat"
+base_url = "https://your-endpoint.example.com/v1"
+model = "your-vision-model"
+api_key_env = "IMAGEEVAL_API_KEY"
+temperature = 0.2
+max_tokens = 1200
+timeout_s = 90
+image_max_edge = 1280
+
+[pipeline]
+max_concurrency = 4
+rpm = 60
+max_retries = 3
+
+[reviewer]
+default_name = "local"

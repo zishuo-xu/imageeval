@@ -63,6 +63,9 @@ FastAPI（同进程托管静态页面与图片）
 │   ├── db.py                     # SQLite 连接、迁移、事务辅助
 │   ├── models.py                 # pydantic 模型与 JSON 契约
 │   ├── storage.py                # 路径安全解析、缩略图生成、图片校验
+│   ├── util.py                   # UTC 时间戳等通用工具
+│   ├── importer.py               # CSV/JSONL 导入、图片落盘、逐行校验
+│   ├── runs.py                   # run 创建与查询
 │   ├── scoring.py                # 确定性分数聚合（纯函数，可单测）
 │   ├── pipeline.py               # 批量评分任务（限流、重试、续跑、进度）
 │   ├── review.py                 # 复核状态推导、一致性统计
@@ -80,7 +83,7 @@ FastAPI（同进程托管静态页面与图片）
 │   └── web/                      # 原生 JS，无构建步骤
 │       ├── index.html            # 标注台
 │       ├── report.html           # 报告页
-│       ├── app.js  review.js  report.js  api.js  charts.js
+│       ├── app.js  review.js  report.js  api.js
 │       ├── style.css
 │       └── vendor/chart.umd.js   # 本地 vendored Chart.js
 ├── data/                         # 运行时数据（默认 ./data，可用 --data-dir 覆盖）
@@ -140,6 +143,7 @@ SQLite，开启 WAL 与外键。所有时间戳为 UTC ISO-8601 字符串。
 |---|---|---|
 | id | TEXT PK | UUID |
 | name | TEXT | |
+| batch_id | TEXT FK | 所属导入批次 |
 | rubric_version | TEXT NOT NULL | 如 `v1` |
 | prompt_hash | TEXT NOT NULL | 提示词模板 SHA-256 前 16 位 |
 | provider | TEXT NOT NULL | provider 名称 |
@@ -441,8 +445,7 @@ App 内报告页；支持一键导出**单文件 HTML**（缩略图 base64、数
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/api/import` | multipart 上传 CSV/JSONL；参数 `image_root`、`download`；返回 batch 与校验报告 |
-| GET | `/api/batches` | 批次列表 |
+| POST | `/api/import` | multipart 上传 CSV/JSONL；参数 `image_root`、`download`；返回 batch 与校验报告 || GET | `/api/batches` | 批次列表 |
 | GET | `/api/batches/{id}/report` | 逐行导入校验结果 |
 | GET | `/api/samples` | 筛选：`batch_id`、`state`、`q`、`tag`、`limit`、`offset` |
 | GET | `/api/samples/{id}` | 样本详情（最新 evaluation + 最新 review） |

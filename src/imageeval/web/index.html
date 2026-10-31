@@ -4,26 +4,26 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>生图评测 · 标注台</title>
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="/static/style.css">
 </head>
-<body>
-<header>
-  <strong>生图评测</strong>
-  <select id="batch-select" title="导入批次"></select>
-  <input id="run-name" placeholder="评测名称" style="width: 140px">
-  <button id="btn-create-run">新建评测</button>
-  <select id="run-select" title="选择评测"></select>
-  <button id="btn-start" class="primary">开始评分</button>
-  <button id="btn-pause">暂停</button>
-  <span id="run-progress" class="hint"></span>
-  <span id="run-message" class="hint"></span>
-  <a id="report-link" href="#" target="_blank">查看报告</a>
-  <button id="btn-import">导入数据</button>
+<body class="workspace">
+<header class="topbar">
+  <div class="brand"><span class="brand-mark">◈</span><div><strong>ImageEval</strong><span class="brand-caption">生图评测工作台</span></div></div>
+  <div class="topbar-context">AI 预标注 <span>／</span> 人工复核 <span>／</span> 数据沉淀</div>
+  <button id="btn-import" class="primary">＋ 导入数据</button>
 </header>
+<section class="run-toolbar" aria-label="评测管理">
+  <div class="toolbar-group"><label for="batch-select">数据批次</label><select id="batch-select" title="导入批次"></select></div>
+  <div class="toolbar-group create-group"><label for="run-name">新建评测</label><div class="inline-controls"><input id="run-name" placeholder="输入评测名称"><button id="btn-create-run">创建</button></div></div>
+  <div class="toolbar-group"><label for="run-select">当前评测</label><select id="run-select" title="选择评测"></select></div>
+  <div class="run-controls"><button id="btn-start" class="primary" disabled>开始评分</button><button id="btn-pause" disabled>暂停</button><a id="report-link" target="_blank" rel="noopener" class="button-link" aria-disabled="true">查看报告 ↗</a></div>
+</section>
+<div class="statusbar"><span id="run-progress">导入数据，开始第一次评测</span><span id="judge-status">正在读取裁判配置…</span><span id="run-message" role="status" aria-live="polite"></span></div>
 
 <main class="review">
   <aside class="filters">
-    <label>筛选</label>
+    <div class="section-label">复核队列</div><label for="filter">样本状态</label>
     <select id="filter">
       <option value="pending">待复核</option>
       <option value="reviewed">已复核</option>
@@ -31,44 +31,52 @@
       <option value="error">评分失败</option>
       <option value="all">全部</option>
     </select>
-    <label>排序</label>
+    <label for="order">排列顺序</label>
     <select id="order">
       <option value="default">导入顺序</option>
       <option value="low_ai">AI 低分优先</option>
       <option value="max_correction">修正幅度最大</option>
-      <option value="random">随机</option>
+      <option value="random">打散顺序</option>
     </select>
     <button id="btn-refresh">刷新队列</button>
     <div id="progress-text" class="hint"></div>
-    <div class="hint">快捷键：A 接受 · J/K 切换 · 1-5 打分 · Enter 保存 · S 跳过 · F 适应图片 · Z 缩放</div>
+    <details class="keyboard-help"><summary>键盘快捷键</summary><p><kbd>A</kbd> 接受评分 <kbd>S</kbd> 跳过</p><p><kbd>J</kbd> 下一张 <kbd>K</kbd> 上一张</p><p><kbd>1–5</kbd> 打分 <kbd>Enter</kbd> 保存</p><p><kbd>F</kbd> 适应 <kbd>Z</kbd> 缩放</p></details>
   </aside>
 
   <section class="viewer">
-    <div id="image-wrap"><img id="image" alt=""></div>
+    <div class="viewer-toolbar"><div><span class="section-label">图片总览</span><span class="hint"> · 4 × 4 / 每页 16 张</span></div><div class="view-controls"><button id="btn-grid" aria-pressed="true">网格</button><button id="btn-detail" aria-pressed="false">单图</button><button id="btn-fit" title="适应图片（F）">适应</button><button id="btn-zoom" title="切换缩放（Z）">放大</button></div></div>
+    <div id="gallery" class="gallery" aria-label="图片评测网格"></div>
+    <div id="image-wrap" class="hidden"><img id="image" alt="当前评测图片" class="hidden" draggable="false"></div>
+    <div id="empty-state" class="empty-state"><span class="empty-icon">▧</span><h2 id="empty-title">从一批图片开始</h2><p id="empty-description">导入 CSV 或 JSONL，创建评测后开始 AI 评分。</p><button id="btn-empty-import" class="primary">导入数据</button></div>
+    <div class="viewer-footer"><div class="inline-controls"><button id="btn-prev-page" disabled>← 上一页</button><span id="page-position" class="hint">第 0 / 0 页</span><button id="btn-next-page" disabled>下一页 →</button></div><span id="sample-position" class="hint">暂无样本</span><div class="inline-controls"><button id="btn-prev" disabled title="上一张（K）">← 上一张</button><button id="btn-next" disabled title="下一张（J）">下一张 →</button></div></div>
+
   </section>
 
   <section class="panel">
-    <div id="state-badge" class="badge"></div>
-    <h2>Query</h2>
+    <div class="section-label">标注与复核</div>
+    <div id="state-badge" class="badge"></div><div id="sample-meta" class="hint"></div>
+    <h2>原始提示词 <span class="hint">Query</span></h2>
     <p id="query"></p>
 
+
+    <h2>人工评分 <span class="hint">1–5 分 · 已预填 AI 分</span></h2>
+    <div class="score-row" data-dim="adherence">
+      <label for="score-adherence">需求遵循<span id="ai-adherence" class="ai-score"></span></label><input id="score-adherence" type="number" min="1" max="5" step="1">
+    </div>
+    <div class="score-row" data-dim="quality">
+      <label for="score-quality">视觉质量<span id="ai-quality" class="ai-score"></span></label><input id="score-quality" type="number" min="1" max="5" step="1">
+    </div>
+    <div class="score-row" data-dim="aesthetics">
+      <label for="score-aesthetics">美学<span id="ai-aesthetics" class="ai-score"></span></label><input id="score-aesthetics" type="number" min="1" max="5" step="1">
+    </div>
+
+    <h2>AI 结论</h2><p id="ai-verdict" class="hint"></p><details><summary class="hint">展开图片观察</summary><p id="ai-observation" class="hint"></p></details>
     <h2>AI 需求清单</h2>
     <ul id="requirements" class="requirements"></ul>
 
-    <h2>评分（1-5）</h2>
-    <div class="score-row" data-dim="adherence">
-      <label>需求遵循</label><input id="score-adherence" type="number" min="1" max="5" step="1">
-    </div>
-    <div class="score-row" data-dim="quality">
-      <label>视觉质量</label><input id="score-quality" type="number" min="1" max="5" step="1">
-    </div>
-    <div class="score-row" data-dim="aesthetics">
-      <label>美学</label><input id="score-aesthetics" type="number" min="1" max="5" step="1">
-    </div>
-
     <details><summary class="hint">子项理由</summary><div id="subscores" class="hint"></div></details>
-    <input id="reason-general" placeholder="修正理由（可选）" style="margin-top: 8px">
-    <textarea id="note" placeholder="备注（可选）" rows="2"></textarea>
+    <input id="reason-general" aria-label="修正理由" placeholder="修正理由（可选）" style="margin-top: 8px">
+    <textarea id="note" aria-label="备注" placeholder="备注（可选）" rows="2"></textarea>
 
     <div id="error-banner" class="hint hidden"></div>
     <div class="actions">
@@ -77,21 +85,21 @@
       <button id="btn-skip">跳过 (S)</button>
       <button id="btn-retry" class="hidden">重试本条</button>
     </div>
-    <div id="message" class="hint"></div>
+    <div id="message" class="hint" role="status" aria-live="polite"></div>
   </section>
 </main>
 
-<div id="modal-import" class="modal hidden">
+<div id="modal-import" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="import-title">
   <div class="card">
-    <h2 style="margin: 0">导入数据</h2>
+    <h2 id="import-title" style="margin: 0">导入评测数据</h2><p class="hint">支持 CSV / JSONL。必填字段：external_id、query、image。</p><label for="import-file">数据文件</label>
     <input id="import-file" type="file" accept=".csv,.jsonl,.ndjson">
-    <input id="import-root" placeholder="图片根目录（本地路径图片必填）">
-    <label><input id="import-download" type="checkbox"> 下载 URL 图片</label>
+    <label for="import-root">图片根目录</label><input id="import-root" placeholder="例如 /Users/you/dataset/images">
+    <p class="hint">填写服务所在电脑上的绝对路径。URL 图片请勾选下方选项。</p><label><input id="import-download" type="checkbox"> 下载 URL 图片</label>
     <div class="actions">
       <button id="btn-import-submit" class="primary">导入</button>
       <button id="btn-import-cancel">取消</button>
     </div>
-    <pre id="import-result" class="hint"></pre>
+    <pre id="import-result" class="hint" role="status"></pre>
   </div>
 </div>
 

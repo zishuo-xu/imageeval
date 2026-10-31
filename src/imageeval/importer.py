@@ -130,6 +130,8 @@ def import_file(
     source_path: Path,
     image_root: Path | None = None,
     download: bool = False,
+    *,
+    source_name: str | None = None,
 ) -> ImportResult:
     ensure_data_dirs(cfg)
     source_path = Path(source_path)
@@ -142,7 +144,7 @@ def import_file(
     db.execute(
         "INSERT INTO import_batches (id, source_name, created_at, sample_count, rejected_count, report_json) "
         "VALUES (?, ?, ?, 0, 0, '[]')",
-        (batch_id, source_path.name, now),
+        (batch_id, source_name or source_path.name, now),
     )
 
     imported = 0

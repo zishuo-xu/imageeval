@@ -163,3 +163,22 @@ def test_skipped_stores_nulls(db, cfg, rubric, seed_batch) -> None:
     assert row["human_aesthetics"] is None
     assert row["human_overall"] is None
     assert counts(db, run_id)["by_state"]["skipped"] == 1
+
+
+@pytest.mark.parametrize("order", ["default", "low_ai", "max_correction", "random"])
+def test_grid_pagination_has_no_duplicates(db, cfg, rubric, seed_batch, order):
+    batch_id, sample_ids = seed_batch(33)
+    run_id = create_run(db, cfg, rubric, batch_id, "grid")
+    for sample_id in sample_ids:
+        _add_eval(db, run_id, sample_id)
+    pages = [review_queue(db, run_id, order=order, limit=16, offset=offset) for offset in (0, 16, 32)]
+    assert [len(page["items"]) for page in pages] == [16, 16, 1]
+    ids = [item["sample_id"] for page in pages for item in page["items"]]
+    assert len(set(ids)) == 33
+    assert review_queue(db, run_id, order=order, limit=16)["items"] == pages[0]["items"]
+
+
+@pytest.mark.parametrize("limit,offset", [(0, 0), (201, 0), (16, -1)])
+def test_queue_rejects_invalid_page(db, limit, offset):
+    with pytest.raises(ValueError):
+        review_queue(db, "run", limit=limit, offset=offset)

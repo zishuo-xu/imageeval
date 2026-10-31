@@ -84,6 +84,15 @@ def create_app(cfg: AppConfig, provider=None) -> FastAPI:
     def health() -> dict:
         return {"ok": True}
 
+    @app.get("/api/judge")
+    def api_judge() -> dict:
+        return {
+            "provider": cfg.judge.provider,
+            "model": cfg.judge.model,
+            "configured": bool(cfg.judge.base_url and cfg.judge.model),
+            "credential_present": bool(cfg.api_key()),
+        }
+
     @app.post("/api/import")
     async def api_import(
         file: UploadFile = File(...),
@@ -102,6 +111,7 @@ def create_app(cfg: AppConfig, provider=None) -> FastAPI:
                 temp_path,
                 Path(image_root) if image_root else None,
                 download,
+                source_name=Path(file.filename or "upload.csv").name,
             )
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc

@@ -36,6 +36,7 @@ def test_full_api_flow(cfg, make_image) -> None:
         batches = client.get("/api/batches").json()
         assert batches[0]["id"] == batch_id
         assert batches[0]["sample_count"] == 2
+        assert batches[0]["source_name"] == "data.csv"
 
         run_response = client.post(
             "/api/runs", json={"name": "api run", "batch_id": batch_id}
@@ -230,3 +231,14 @@ def test_retry_while_run_running_returns_409(cfg, make_image) -> None:
             ):
                 break
             time.sleep(0.1)
+
+
+def test_judge_configuration_does_not_expose_credentials(cfg, monkeypatch):
+    monkeypatch.setenv(cfg.judge.api_key_env, "private-test-value")
+    with _client(cfg) as client:
+        response = client.get("/api/judge")
+        assert response.status_code == 200
+        assert response.json()["credential_present"] is True
+        assert response.json()["model"] == cfg.judge.model
+        assert "private-test-value" not in response.text
+        assert set(response.json()) == {"provider", "model", "configured", "credential_present"}

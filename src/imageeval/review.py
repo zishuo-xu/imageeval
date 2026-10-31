@@ -19,10 +19,10 @@ QUEUE_FILTERS = {
 }
 
 QUEUE_ORDERS = {
-    "default": "s.created_at ASC",
-    "low_ai": "e.overall_score IS NULL, e.overall_score ASC",
-    "max_correction": "correction DESC",
-    "random": "RANDOM()",
+    "default": "s.created_at ASC, s.rowid ASC",
+    "low_ai": "e.overall_score IS NULL, e.overall_score ASC, s.id ASC",
+    "max_correction": "correction DESC, s.id ASC",
+    "random": "substr(s.id, 10), s.id",
 }
 
 _BASE_FROM = """
@@ -99,6 +99,8 @@ def review_queue(
     limit: int = 50,
     offset: int = 0,
 ) -> dict:
+    if not 1 <= limit <= 200 or offset < 0:
+        raise ValueError("limit must be 1..200 and offset must be non-negative")
     if filter_name not in QUEUE_FILTERS:
         raise ValueError(f"unknown filter: {filter_name}")
     if order not in QUEUE_ORDERS:

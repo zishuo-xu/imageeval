@@ -140,6 +140,7 @@ class Database:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
         self._lock = threading.RLock()
+        self._tx_depth = 0
 
     @property
     def conn(self) -> sqlite3.Connection:
@@ -156,23 +157,31 @@ class Database:
     def execute(self, sql: str, params: Sequence[Any] = ()) -> sqlite3.Cursor:
         with self._lock:
             cursor = self._conn.execute(sql, params)
-            self._conn.commit()
+            if self._tx_depth == 0:
+                self._conn.commit()
             return cursor
 
     def executemany(self, sql: str, seq) -> None:
         with self._lock:
             self._conn.executemany(sql, seq)
-            self._conn.commit()
+            if self._tx_depth == 0:
+                self._conn.commit()
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
         with self._lock:
+            self._tx_depth += 1
             try:
                 yield self._conn
-                self._conn.commit()
-            except Exception:
-                self._conn.rollback()
+            except BaseException:
+                self._tx_depth -= 1
+                if self._tx_depth == 0:
+                    self._conn.rollback()
                 raise
+            else:
+                self._tx_depth -= 1
+                if self._tx_depth == 0:
+                    self._conn.commit()
 
     def close(self) -> None:
         with self._lock:

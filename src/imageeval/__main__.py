@@ -33,6 +33,10 @@ def main(argv: list[str] | None = None) -> int:
     report_parser.add_argument("--run-id", required=True)
     report_parser.add_argument("--out", type=Path, default=None)
 
+    export_parser = subparsers.add_parser("export", help="导出训练数据")
+    export_parser.add_argument("--run-id", required=True)
+    export_parser.add_argument("--mode", choices=["raw", "sft", "only-reviewed"], default="sft")
+
     args = parser.parse_args(argv)
     cfg = load_config(args.config, args.data_dir)
 
@@ -98,6 +102,16 @@ def main(argv: list[str] | None = None) -> int:
         path = export_static_report(
             summary, cfg.data_dir, args.out or cfg.reports_dir
         )
+        print(str(path))
+        db.close()
+        return 0
+
+    if args.command == "export":
+        from .export import export_dataset
+
+        db = Database(cfg.db_path)
+        migrate(db.conn)
+        path = export_dataset(db, cfg, args.run_id, args.mode)
         print(str(path))
         db.close()
         return 0

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -12,6 +13,7 @@ from pydantic import BaseModel
 
 from .config import AppConfig
 from .db import Database, mark_stale_runs, migrate
+from .export import export_dataset
 from .importer import import_file
 from .judge import build_provider
 from .models import ReviewSubmit
@@ -32,6 +34,11 @@ class RunCreate(BaseModel):
 
 class ReportExportRequest(BaseModel):
     run_id: str
+
+
+class DatasetExportRequest(BaseModel):
+    run_id: str
+    mode: str = "sft"
 
 
 class _State:
@@ -298,6 +305,40 @@ def create_app(cfg: AppConfig, provider=None) -> FastAPI:
         if not path.exists():
             raise HTTPException(404, "file not found")
         return FileResponse(path)
+
+    @app.post("/api/exports/dataset")
+    async def api_export_dataset(body: DatasetExportRequest) -> dict:
+        try:
+            out_dir = await run_in_threadpool(
+                export_dataset, db(), cfg, body.run_id, body.mode
+            )
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+        zip_base = out_dir
+        shutil.make_archive(str(zip_base), "zip", root_dir=out_dir)
+        zip_path = zip_base.with_suffix(".zip")
+        with (out_dir / "dataset.jsonl").open(encoding="utf-8") as fh:
+            count = sum(1 for _ in fh)
+        return {
+            "path": str(out_dir),
+            "url": f"/api/exports/{zip_path.name}/download",
+            "count": count,
+        }
+
+    @app.get("/api/exports/{name}/download")
+    def api_download_export(name: str) -> FileResponse:
+        if not name.endswith(".zip"):
+            raise HTTPException(400, "only zip downloads are supported")
+        try:
+            path = resolve_under(cfg.exports_dir, name)
+        except ValueError as exc:
+            raise HTTPException(400, "invalid file name") from exc
+        if not path.exists():
+            raise HTTPException(404, "file not found")
+        return FileResponse(path, filename=name)
 
     @app.get("/")
     def index_page() -> FileResponse:

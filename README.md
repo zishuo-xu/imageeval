@@ -8,8 +8,10 @@
 uv sync --extra dev
 cp config.example.toml config.toml   # 填写 base_url / model
 export IMAGEEVAL_API_KEY="你的密钥"
-uv run python -m imageeval serve
+uv run python -m imageeval --config config.toml serve
 ```
+
+`--config` 是顶层选项，必须写在子命令之前。不传时不会读取 TOML，将退回内置默认值。
 
 打开 http://127.0.0.1:8765 。
 
@@ -26,14 +28,27 @@ CSV 列或 JSONL 字段：
 | tags | 否 | 分号分隔，或 JSON 数组 |
 | metadata | 否 | JSON 对象字符串 |
 
+URL 图片必须加 `--download`，否则该行会被拒绝。
+
 ## CLI
 
 ```bash
-uv run python -m imageeval import data.csv --image-root ./images
-uv run python -m imageeval run --new --batch-id BATCH --name "第一轮"
-uv run python -m imageeval report --run-id RUN
-uv run python -m imageeval export --run-id RUN --mode sft
+uv run python -m imageeval --config config.toml import data.csv --image-root ./images
+uv run python -m imageeval --config config.toml run --new --batch-id BATCH --name "第一轮"
+uv run python -m imageeval --config config.toml run --run-id RUN
+uv run python -m imageeval --config config.toml report --run-id RUN
+uv run python -m imageeval --config config.toml export --run-id RUN --mode sft
 ```
+
+`run --run-id RUN` 用于断点续跑，跳过已有 `ok` 评估。
+
+## 导出模式
+
+| 模式 | 包含样本 | 用途 |
+|---|---|---|
+| `raw` | 所有已评分样本（gold + silver） | 保存完整标注事实 |
+| `only-reviewed` | 仅已复核样本（gold） | 导出高质量子集 |
+| `sft` | 仅已复核样本（gold），query+image → 标注 | 评测模型 SFT |
 
 ## 评分口径
 

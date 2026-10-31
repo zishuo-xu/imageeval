@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from imageeval.importer import import_file
 
 
@@ -52,3 +54,9 @@ def test_import_requires_rows(db, cfg, tmp_path) -> None:
         assert "no rows" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_unreadable_source_leaves_no_batch(db, cfg, tmp_path) -> None:
+    with pytest.raises(OSError):
+        import_file(db, cfg, tmp_path / "missing.csv")
+    assert db.query_one("SELECT COUNT(*) AS c FROM import_batches")["c"] == 0

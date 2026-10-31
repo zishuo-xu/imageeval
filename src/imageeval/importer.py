@@ -108,7 +108,11 @@ def _prepare_image(
     destination = target_dir / f"{digest}{suffix}"
     if not destination.exists():
         destination.write_bytes(content)
-    validate_image(destination)
+    try:
+        validate_image(destination)
+    except Exception:
+        destination.unlink(missing_ok=True)
+        raise
     return destination
 
 
@@ -125,6 +129,8 @@ def import_file(
     base_dir = Path(image_root).expanduser().resolve() if image_root else source_path.parent.resolve()
     now = utcnow()
 
+    rows = list(_iter_rows(source_path))
+
     db.execute(
         "INSERT INTO import_batches (id, source_name, created_at, sample_count, rejected_count, report_json) "
         "VALUES (?, ?, ?, 0, 0, '[]')",
@@ -135,12 +141,6 @@ def import_file(
     rejected = 0
     report: list[dict] = []
     seen: set[str] = set()
-
-    try:
-        rows = list(_iter_rows(source_path))
-    except ValueError:
-        db.execute("DELETE FROM import_batches WHERE id = ?", (batch_id,))
-        raise
 
     for row_no, row in rows:
         try:

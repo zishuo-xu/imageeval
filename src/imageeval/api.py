@@ -16,7 +16,7 @@ from .importer import import_file
 from .judge import build_provider
 from .models import ReviewSubmit
 from .pipeline import RunManager, execute_run
-from .report import build_summary, render_report_html
+from .report import build_summary, export_static_report, render_report_html
 from .review import counts, review_queue, submit_review
 from .runs import create_run, get_run, list_runs
 from .rubric.loader import Rubric, load_rubric
@@ -28,6 +28,10 @@ WEB_DIR = Path(__file__).parent / "web"
 class RunCreate(BaseModel):
     name: str
     batch_id: str
+
+
+class ReportExportRequest(BaseModel):
+    run_id: str
 
 
 class _State:
@@ -275,6 +279,25 @@ def create_app(cfg: AppConfig, provider=None) -> FastAPI:
         except LookupError as exc:
             raise HTTPException(404, str(exc)) from exc
         return HTMLResponse(render_report_html(summary, cfg.data_dir))
+
+    @app.post("/api/reports/export")
+    def api_export_report(body: ReportExportRequest) -> dict:
+        try:
+            summary = build_summary(db(), body.run_id, rubric())
+            path = export_static_report(summary, cfg.data_dir, cfg.reports_dir)
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        return {"path": str(path), "url": f"/api/files/reports/{path.name}"}
+
+    @app.get("/api/files/reports/{name}")
+    def api_report_file(name: str) -> FileResponse:
+        try:
+            path = resolve_under(cfg.reports_dir, name)
+        except ValueError as exc:
+            raise HTTPException(400, "invalid file name") from exc
+        if not path.exists():
+            raise HTTPException(404, "file not found")
+        return FileResponse(path)
 
     @app.get("/")
     def index_page() -> FileResponse:

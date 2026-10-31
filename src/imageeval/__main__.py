@@ -29,6 +29,10 @@ def main(argv: list[str] | None = None) -> int:
 
     subparsers.add_parser("serve", help="启动本地 Web 服务")
 
+    report_parser = subparsers.add_parser("report", help="生成静态 HTML 报告")
+    report_parser.add_argument("--run-id", required=True)
+    report_parser.add_argument("--out", type=Path, default=None)
+
     args = parser.parse_args(argv)
     cfg = load_config(args.config, args.data_dir)
 
@@ -81,6 +85,21 @@ def main(argv: list[str] | None = None) -> int:
         from .api import create_app
 
         uvicorn.run(create_app(cfg), host=cfg.host, port=cfg.port)
+        return 0
+
+    if args.command == "report":
+        from .report import build_summary, export_static_report
+        from .rubric.loader import load_rubric
+
+        db = Database(cfg.db_path)
+        migrate(db.conn)
+        rubric = load_rubric(cfg.rubric_path)
+        summary = build_summary(db, args.run_id, rubric)
+        path = export_static_report(
+            summary, cfg.data_dir, args.out or cfg.reports_dir
+        )
+        print(str(path))
+        db.close()
         return 0
 
     return 1

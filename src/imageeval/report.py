@@ -5,6 +5,7 @@ import copy
 import html
 import json
 import math
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .db import Database
@@ -299,3 +300,12 @@ def render_report_html(summary: dict, data_dir: Path, inline_images: bool = Fals
         .replace("{{DATA_JSON}}", data_json)
         .replace("{{REPORT_JS}}", report_js)
     )
+
+
+def export_static_report(summary: dict, data_dir: Path, out_dir: Path) -> Path:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    run_id = summary["run"]["id"]
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    path = out_dir / f"report_{run_id}_{stamp}.html"
+    path.write_text(render_report_html(summary, data_dir, inline_images=True), encoding="utf-8")
+    return path

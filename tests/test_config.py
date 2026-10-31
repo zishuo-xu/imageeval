@@ -45,7 +45,8 @@ default_name = "alice"
     assert cfg.api_key() == "secret"
 
 
-def test_defaults_without_config_file(tmp_path: Path) -> None:
+def test_defaults_without_config_file(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("IMAGEEVAL_API_KEY", raising=False)
     cfg = load_config(None, data_dir=tmp_path)
     assert cfg.host == "127.0.0.1"
     assert cfg.port == 8765

@@ -1,0 +1,13 @@
+external_id,query,image,model_name,tags,metadata
+cat-good,一只红色的猫坐在窗台上，阳光从左侧照进来,cat-good.jpg,demo-v1,demo;good,"{""variant"": ""good""}"
+cat-partial,一只红色的猫坐在窗台上，阳光从左侧照进来,cat-partial.jpg,demo-v1,demo;partial,"{""variant"": ""partial""}"
+cat-bad,一只红色的猫坐在窗台上，阳光从左侧照进来,cat-bad.jpg,demo-v1,demo;bad,"{""variant"": ""bad""}"
+birds-good,两只蓝色的鸟停在树枝上，背景是雪山,birds-good.jpg,demo-v1,demo;good,"{""variant"": ""good""}"
+birds-partial,两只蓝色的鸟停在树枝上，背景是雪山,birds-partial.jpg,demo-v1,demo;partial,"{""variant"": ""partial""}"
+birds-bad,两只蓝色的鸟停在树枝上，背景是雪山,birds-bad.jpg,demo-v1,demo;bad,"{""variant"": ""bad""}"
+child-good,一个穿黄色雨衣的小孩在雨中撑红伞,child-good.jpg,demo-v1,demo;good,"{""variant"": ""good""}"
+child-partial,一个穿黄色雨衣的小孩在雨中撑红伞,child-partial.jpg,demo-v1,demo;partial,"{""variant"": ""partial""}"
+child-bad,一个穿黄色雨衣的小孩在雨中撑红伞,child-bad.jpg,demo-v1,demo;bad,"{""variant"": ""bad""}"
+city-good,赛博朋克风格的城市夜景，霓虹灯，下雨,city-good.jpg,demo-v1,demo;good,"{""variant"": ""good""}"
+city-partial,赛博朋克风格的城市夜景，霓虹灯，下雨,city-partial.jpg,demo-v1,demo;partial,"{""variant"": ""partial""}"
+city-bad,赛博朋克风格的城市夜景，霓虹灯，下雨,city-bad.jpg,demo-v1,demo;bad,"{""variant"": ""bad""}"

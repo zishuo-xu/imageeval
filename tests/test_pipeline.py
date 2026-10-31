@@ -1,7 +1,7 @@
 import asyncio
 
 from imageeval.judge.fake import FakeProvider
-from imageeval.pipeline import execute_run
+from imageeval.pipeline import RunManager, _save_error, execute_run
 from imageeval.runs import create_run
 
 
@@ -59,3 +59,79 @@ def test_create_run_validates_batch(db, cfg, rubric) -> None:
         assert "batch not found" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_error_upsert_never_overwrites_ok(db, cfg, rubric, seed_batch) -> None:
+    batch_id, sample_ids = seed_batch(1)
+    run_id = _run(db, cfg, rubric, batch_id, FakeProvider())
+
+    before = db.query_one(
+        "SELECT * FROM evaluations WHERE sample_id = ? AND run_id = ?",
+        (sample_ids[0], run_id),
+    )
+    assert before["status"] == "ok"
+
+    _save_error(db, sample_ids[0], run_id, "boom")
+
+    after = db.query_one(
+        "SELECT * FROM evaluations WHERE sample_id = ? AND run_id = ?",
+        (sample_ids[0], run_id),
+    )
+    assert after["status"] == "ok"
+    assert after["adherence_score"] == before["adherence_score"]
+    assert after["quality_score"] == before["quality_score"]
+    assert after["aesthetics_score"] == before["aesthetics_score"]
+    assert after["overall_score"] == before["overall_score"]
+    assert after["error"] is None
+    run = db.query_one("SELECT * FROM runs WHERE id = ?", (run_id,))
+    assert run["failed"] == 0
+
+
+def test_resume_converts_error_to_ok(db, cfg, rubric, seed_batch) -> None:
+    batch_id, _ = seed_batch(1)
+    run_id = _run(db, cfg, rubric, batch_id, FakeProvider(fail_times=10))
+
+    failed = db.query_one("SELECT * FROM evaluations WHERE run_id = ?", (run_id,))
+    assert failed["status"] == "error"
+
+    asyncio.run(execute_run(db, cfg, FakeProvider(), rubric, run_id))
+
+    rows = db.query("SELECT * FROM evaluations WHERE run_id = ?", (run_id,))
+    assert len(rows) == 1
+    assert rows[0]["id"] == failed["id"]
+    assert rows[0]["status"] == "ok"
+    assert rows[0]["error"] is None
+    run = db.query_one("SELECT * FROM runs WHERE id = ?", (run_id,))
+    assert run["done"] == 1
+    assert run["failed"] == 0
+    assert run["status"] == "completed"
+
+
+class SlowFakeProvider(FakeProvider):
+    async def evaluate(self, query, image_path):
+        await asyncio.sleep(0.1)
+        return await super().evaluate(query, image_path)
+
+
+def test_pause_then_resume_via_manager(db, cfg, rubric, seed_batch) -> None:
+    batch_id, _ = seed_batch(2)
+    run_id = create_run(db, cfg, rubric, batch_id, "pause run")
+
+    async def scenario() -> None:
+        manager = RunManager(db, cfg, SlowFakeProvider(), rubric)
+        assert manager.start(run_id) is True
+        await asyncio.sleep(0.05)
+        manager.pause(run_id)
+        assert manager.start(run_id) is True
+
+        async def wait_done() -> None:
+            while manager.is_running(run_id):
+                await asyncio.sleep(0.02)
+
+        await asyncio.wait_for(wait_done(), timeout=5.0)
+
+    asyncio.run(scenario())
+
+    run = db.query_one("SELECT * FROM runs WHERE id = ?", (run_id,))
+    assert run["status"] == "completed"
+    assert run["done"] == 2

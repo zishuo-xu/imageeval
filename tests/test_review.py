@@ -119,3 +119,19 @@ def test_cannot_review_failed_evaluation(db, cfg, rubric, seed_batch) -> None:
     )["id"]
     with pytest.raises(ValueError, match="failed evaluation"):
         submit_review(db, cfg, rubric, failed_id, ReviewSubmit(decision="accepted"))
+
+
+def test_skipped_stores_nulls(db, cfg, rubric, seed_batch) -> None:
+    run_id, _, eval_ids = _seed_run(db, cfg, rubric, seed_batch)
+
+    result = submit_review(db, cfg, rubric, eval_ids[0], ReviewSubmit(decision="skipped"))
+
+    assert result["decision"] == "skipped"
+    assert result["human_adherence"] is None
+    assert result["human_overall"] is None
+    row = db.query_one("SELECT * FROM reviews WHERE evaluation_id = ?", (eval_ids[0],))
+    assert row["human_adherence"] is None
+    assert row["human_quality"] is None
+    assert row["human_aesthetics"] is None
+    assert row["human_overall"] is None
+    assert counts(db, run_id)["by_state"]["skipped"] == 1

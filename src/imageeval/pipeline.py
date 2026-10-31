@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import random
+import sys
 import time
 import uuid
 from typing import Any
@@ -149,7 +150,11 @@ async def _evaluate_one(
     run_id: str,
     sample: Any,
 ) -> None:
-    image_path = resolve_under(cfg.images_dir, sample["image_path"])
+    try:
+        image_path = resolve_under(cfg.images_dir, sample["image_path"])
+    except Exception as exc:
+        _save_error(db, sample["id"], run_id, f"image path error: {exc}")
+        return
     last_error: Exception | None = None
 
     for attempt in range(cfg.pipeline.max_retries + 1):
@@ -225,21 +230,45 @@ async def execute_run(
             await limiter.acquire()
             if control.cancelled:
                 return
-            await _evaluate_one(db, cfg, provider, rubric, run_id, sample)
-            _refresh_counts(db, run_id)
+            try:
+                await _evaluate_one(db, cfg, provider, rubric, run_id, sample)
+                _refresh_counts(db, run_id)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                try:
+                    _save_error(db, sample["id"], run_id, f"worker error: {exc}")
+                except Exception:
+                    pass
+                try:
+                    _refresh_counts(db, run_id)
+                except Exception:
+                    pass
 
     workers = [
         asyncio.create_task(worker())
         for _ in range(max(1, cfg.pipeline.max_concurrency))
     ]
-    await asyncio.gather(*workers, return_exceptions=True)
+    results = await asyncio.gather(*workers, return_exceptions=True)
+    worker_errors = [r for r in results if isinstance(r, BaseException)]
+
+    _refresh_counts(db, run_id)
+    progress = db.query_one(
+        "SELECT done, failed FROM runs WHERE id = ?", (run_id,)
+    )
+    incomplete = (progress["done"] + progress["failed"]) < total
 
     usage = db.query_one(
         "SELECT COALESCE(SUM(tokens_in), 0) AS ti, COALESCE(SUM(tokens_out), 0) AS to_, "
         "COALESCE(SUM(latency_ms), 0) AS lm FROM evaluations WHERE run_id = ?",
         (run_id,),
     )
-    status = "cancelled" if control.cancelled else "completed"
+    if control.cancelled:
+        status = "cancelled"
+    elif worker_errors or incomplete:
+        status = "failed"
+    else:
+        status = "completed"
     db.execute(
         "UPDATE runs SET status = ?, finished_at = ?, usage_json = ? WHERE id = ?",
         (
@@ -279,6 +308,14 @@ class RunManager:
 
     def start(self, run_id: str) -> bool:
         if self.is_running(run_id):
+            control = self._controls.get(run_id)
+            if control is not None and control.paused:
+                control.paused = False
+                self._db.execute(
+                    "UPDATE runs SET status = 'running' WHERE id = ? AND status = 'paused'",
+                    (run_id,),
+                )
+                return True
             return False
         control = RunControl()
         self._controls[run_id] = control
@@ -288,7 +325,13 @@ class RunManager:
             )
         )
         self._tasks[run_id] = task
-        task.add_done_callback(lambda _: self._tasks.pop(run_id, None))
+
+        def _done(task: asyncio.Task) -> None:
+            self._tasks.pop(run_id, None)
+            if not task.cancelled() and task.exception() is not None:
+                print(f"run {run_id} task failed: {task.exception()}", file=sys.stderr)
+
+        task.add_done_callback(_done)
         return True
 
     def pause(self, run_id: str) -> None:

@@ -5946,3 +5946,5 @@ def select_failure_cases(rows: list[dict], top_n: int = 12) -> list[dict]:
 | §14 配置 | Task 1 |
 | §15 里程碑 | Task 1-5（M1）、6-8（M2）、9-13（M3）、14-16（M4） |
 | §16 学习点 | Task 4、Task 10 + 附录 A |
+
+> **实施后校准（2026-11-01）**：本矩阵高估了 §7、§8、§12 的覆盖度。实际未完全落地的是：§7.2 的 query/tag 筛选与按维度修正理由、§8 的"低分/修正幅度"两个 Top-N、可点击明细表、`include_images`、§12 的 `/api/samples` 的 `batch_id`/`tag`/`unscored` 筛选与样本详情载荷。`serve --host/--port` 已实现但 README/测试未覆盖。以上差距已记录在 `docs/requirements.md` §12.2，作为后续项，不影响评分、复核、报告与导出的正确性。

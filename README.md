@@ -2,6 +2,12 @@
 
 对「原始 Query + 生成图片」做需求遵循、视觉质量、美学三维评测，支持 AI 预标注、人工复核、可视化报告与训练数据导出。
 
+## 需求定义
+
+完整的需求定义、评分口径、功能编号（FR-1~FR-9）与验收标准见 **[docs/requirements.md](docs/requirements.md)**。
+
+一句话版本：对每组「原始 Query + 生成图片」做三维结构化评分，通过「AI 预标注 → 人工修正」沉淀 gold 数据，用于评价生图模型效果并为后续评测模型训练积累数据。
+
 ## 快速开始
 
 ```bash
@@ -12,6 +18,18 @@ uv run python -m imageeval --config config.toml serve
 ```
 
 `--config` 是顶层选项，必须写在子命令之前。不传时不会读取 TOML，将退回内置默认值。
+
+已验证的裁判配置（DeepSeek 多模态）：
+
+```toml
+[judge]
+provider = "openai_compat"
+base_url = "https://api.deepseek.com"
+model = "deepseek-flash"
+api_key_env = "IMAGEEVAL_API_KEY"
+max_tokens = 4096   # 推理模型，留足输出预算
+timeout_s = 180
+```
 
 打开 http://127.0.0.1:8765 。
 
@@ -64,3 +82,17 @@ uv run pytest -v
 ```
 
 测试不发起任何真实网络请求。
+
+## 示例数据
+
+`sample_data/` 提供 12 张示例图（4 个 Query × 好/部分/差三档）与 `samples.csv`，用于跑通导入、评分、复核、报告与导出：
+
+```bash
+uv run python -m imageeval --config config.toml import sample_data/samples.csv --image-root sample_data/images
+```
+
+## 文档
+
+- [需求定义与验收标准](docs/requirements.md)
+- [设计文档](docs/superpowers/specs/2026-10-31-image-eval-system-design.md)
+- [实施计划](docs/superpowers/plans/2026-10-31-image-eval-system.md)

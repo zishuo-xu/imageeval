@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{TITLE}}</title>
+<style>{{CSS}}</style>
+</head>
+<body>
+<div class="report">
+  <h1 id="run-title">评测报告</h1>
+  <div class="hint" id="run-meta"></div>
+
+  <h2>概览</h2>
+  <div class="grid cards" id="cards"></div>
+
+  <h2>AI 与人工一致性</h2>
+  <div class="grid cards" id="agreement-cards"></div>
+
+  <h2>分布与雷达</h2>
+  <div class="grid charts">
+    <div class="card"><canvas id="chart-adherence"></canvas></div>
+    <div class="card"><canvas id="chart-quality"></canvas></div>
+    <div class="card"><canvas id="chart-aesthetics"></canvas></div>
+    <div class="card"><canvas id="chart-radar"></canvas></div>
+    <div class="card"><canvas id="chart-scatter"></canvas></div>
+  </div>
+
+  <h2>需求归因</h2>
+  <div class="grid charts">
+    <div class="card"><table id="table-attribution"></table></div>
+    <div class="card"><div id="status-counts" class="hint"></div></div>
+  </div>
+
+  <h2>混淆矩阵（AI 分 vs 人工分）</h2>
+  <div class="grid charts" id="confusion"></div>
+
+  <h2>失败案例</h2>
+  <div class="failure-wall" id="failure-wall"></div>
+
+  <h2>已复核明细</h2>
+  <div class="card"><table id="sample-table"></table></div>
+</div>
+<script>{{CHART_JS}}</script>
+<script>window.__REPORT_DATA__ = {{DATA_JSON}};</script>
+<script>{{REPORT_JS}}</script>
+</body>
+</html>

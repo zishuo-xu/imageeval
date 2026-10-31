@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+import base64
+import copy
 import json
 import math
+from pathlib import Path
 
 from .db import Database
 from .review import counts
 from .rubric.loader import Rubric
+from .storage import resolve_under
 
 DIMENSIONS = ("adherence", "quality", "aesthetics")
+
+WEB_DIR = Path(__file__).parent / "web"
 
 
 def _mean(values: list[float]) -> float | None:
@@ -257,3 +263,37 @@ def build_summary(db: Database, run_id: str, rubric: Rubric) -> dict:
         "failures": select_failure_cases(failure_rows),
         "samples": reviewed_samples,
     }
+
+
+def _inline_image(thumb_path: str, data_dir: Path) -> str:
+    if not thumb_path:
+        return ""
+    path = resolve_under(data_dir / "thumbs", thumb_path)
+    if not path.exists():
+        return ""
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:image/jpeg;base64,{encoded}"
+
+
+def render_report_html(summary: dict, data_dir: Path, inline_images: bool = False) -> str:
+    data = copy.deepcopy(summary)
+    for case in data.get("failures", []):
+        if inline_images:
+            case["image"] = _inline_image(case.get("thumb_path", ""), data_dir)
+        else:
+            case["image"] = f"/api/samples/{case['sample_id']}/image?size=thumb"
+
+    template = (WEB_DIR / "report.html").read_text(encoding="utf-8")
+    css = (WEB_DIR / "style.css").read_text(encoding="utf-8")
+    chart_js = (WEB_DIR / "vendor" / "chart.umd.js").read_text(encoding="utf-8")
+    report_js = (WEB_DIR / "report.js").read_text(encoding="utf-8")
+    data_json = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
+    title = f"评测报告 · {data.get('run', {}).get('name', '')}"
+
+    return (
+        template.replace("{{TITLE}}", title)
+        .replace("{{CSS}}", css)
+        .replace("{{CHART_JS}}", chart_js)
+        .replace("{{DATA_JSON}}", data_json)
+        .replace("{{REPORT_JS}}", report_js)
+    )

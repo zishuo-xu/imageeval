@@ -27,6 +27,8 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument("--batch-id", default=None)
     run_parser.add_argument("--name", default="CLI run")
 
+    subparsers.add_parser("serve", help="启动本地 Web 服务")
+
     args = parser.parse_args(argv)
     cfg = load_config(args.config, args.data_dir)
 
@@ -71,6 +73,14 @@ def main(argv: list[str] | None = None) -> int:
         run = db.query_one("SELECT status, done, failed, total FROM runs WHERE id = ?", (run_id,))
         print(json.dumps(dict(run), ensure_ascii=False))
         db.close()
+        return 0
+
+    if args.command == "serve":
+        import uvicorn
+
+        from .api import create_app
+
+        uvicorn.run(create_app(cfg), host=cfg.host, port=cfg.port)
         return 0
 
     return 1

@@ -1,10 +1,19 @@
-const app = { runId: null, pollTimer: null };
+const app = { runId: null, pollTimer: null, lastStatus: null };
+
+var escapeHtml = (value) =>
+  String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[ch]));
 
 async function refreshBatches() {
   const batches = await getJSON("/api/batches");
   const select = qs("batch-select");
   select.innerHTML = batches
-    .map((b) => `<option value="${b.id}">${b.source_name} (${b.sample_count})</option>`)
+    .map((b) => `<option value="${b.id}">${escapeHtml(b.source_name)} (${b.sample_count})</option>`)
     .join("");
 }
 
@@ -12,7 +21,7 @@ async function refreshRuns() {
   const runs = await getJSON("/api/runs");
   const select = qs("run-select");
   select.innerHTML = runs
-    .map((r) => `<option value="${r.id}">${r.name} · ${r.status} · ${r.done}/${r.total}</option>`)
+    .map((r) => `<option value="${r.id}">${escapeHtml(r.name)} · ${r.status} · ${r.done}/${r.total}</option>`)
     .join("");
   if (runs.length) {
     const preferred = app.runId && runs.some((r) => r.id === app.runId) ? app.runId : runs[0].id;
@@ -35,6 +44,10 @@ async function pollRun() {
     const data = await getJSON(`/api/runs/${app.runId}`);
     const run = data.run;
     qs("run-progress").textContent = `${run.status} · ${run.done}/${run.total} · 失败 ${run.failed}`;
+    if (run.status !== app.lastStatus) {
+      app.lastStatus = run.status;
+      window.dispatchEvent(new CustomEvent("run-status", { detail: { run } }));
+    }
     if (run.status === "running") {
       app.pollTimer = setTimeout(pollRun, 2000);
     }

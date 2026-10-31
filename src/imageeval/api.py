@@ -104,6 +104,8 @@ def create_app(cfg: AppConfig, provider=None) -> FastAPI:
                 Path(image_root) if image_root else None,
                 download,
             )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
         finally:
             temp_path.unlink(missing_ok=True)
         return {
@@ -240,14 +242,19 @@ def create_app(cfg: AppConfig, provider=None) -> FastAPI:
     @app.post("/api/evaluations/{evaluation_id}/retry")
     async def api_retry_evaluation(evaluation_id: str) -> dict:
         row = db().query_one(
-            "SELECT e.run_id FROM evaluations e WHERE e.id = ?", (evaluation_id,)
+            "SELECT e.run_id, e.status, r.status AS run_status FROM evaluations e "
+            "JOIN runs r ON r.id = e.run_id WHERE e.id = ?",
+            (evaluation_id,),
         )
         if row is None:
             raise HTTPException(404, "evaluation not found")
-        db().execute("DELETE FROM evaluations WHERE id = ? AND status = 'error'", (evaluation_id,))
-        run_id = row["run_id"]
+        if row["status"] != "error":
+            raise HTTPException(409, "only error evaluations can be retried")
+        if row["run_status"] in ("running", "paused"):
+            raise HTTPException(409, "run is active; finish or cancel it before retrying")
         assert state.manager is not None
-        state.manager.start(run_id)
+        if not state.manager.start(row["run_id"]):
+            raise HTTPException(409, "run is already running")
         return {"ok": True}
 
     @app.get("/api/review/queue")

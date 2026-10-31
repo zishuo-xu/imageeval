@@ -11,6 +11,8 @@ def test_index_and_static_assets(cfg) -> None:
         assert index.status_code == 200
         for marker in ("btn-accept", "requirements", "image", "run-select"):
             assert marker in index.text
+        for script in ("/static/api.js", "/static/app.js", "/static/review.js"):
+            assert script in index.text
 
         css = client.get("/static/style.css")
         assert css.status_code == 200

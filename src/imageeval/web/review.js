@@ -10,6 +10,15 @@ const review = {
   focusDim: "adherence",
 };
 
+var escapeHtml = (value) =>
+  String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[ch]));
+
 function current() {
   return review.items[review.index];
 }
@@ -50,9 +59,9 @@ function render() {
     .map(
       (r) => `
       <li class="${r.status}">
-        <div>${r.text}</div>
-        <div class="req-meta">${r.category} · ${r.criticality} · ${r.status}</div>
-        <div class="hint">${r.evidence || ""}</div>
+        <div>${escapeHtml(r.text)}</div>
+        <div class="req-meta">${escapeHtml(r.category)} · ${r.criticality} · ${r.status}</div>
+        <div class="hint">${escapeHtml(r.evidence || "")}</div>
       </li>`
     )
     .join("");
@@ -93,6 +102,7 @@ async function submit(decision) {
   }
   try {
     await postJSON(`/api/evaluations/${item.evaluation_id}/review`, payload);
+    review.total = Math.max(0, review.total - 1);
     review.items.splice(review.index, 1);
     if (review.items.length === 0) {
       await loadQueue();
@@ -120,6 +130,9 @@ function prev() {
 }
 
 document.addEventListener("keydown", (event) => {
+  if (event.target.tagName === "BUTTON" && event.key === "Enter") {
+    return;
+  }
   const tag = event.target.tagName;
   if (tag === "INPUT" || tag === "TEXTAREA") {
     if (event.key === "Enter") {
@@ -163,6 +176,8 @@ window.addEventListener("run-changed", (event) => {
   review.runId = event.detail.runId;
   loadQueue();
 });
+
+window.addEventListener("run-status", () => loadQueue());
 
 window.addEventListener("DOMContentLoaded", () => {
   qs("btn-accept").onclick = () => submit("accepted");

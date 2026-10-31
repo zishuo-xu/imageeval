@@ -213,6 +213,24 @@ async def retry_evaluation(
         {"id": row["sample_id"], "query_text": row["query_text"], "image_path": row["image_path"]},
     )
     _refresh_counts(db, row["run_id"])
+    usage = db.query_one(
+        "SELECT COALESCE(SUM(tokens_in), 0) AS ti, COALESCE(SUM(tokens_out), 0) AS to_, "
+        "COALESCE(SUM(latency_ms), 0) AS lm FROM evaluations WHERE run_id = ?",
+        (row["run_id"],),
+    )
+    run = db.query_one("SELECT status, done, failed, total FROM runs WHERE id = ?", (row["run_id"],))
+    new_status = run["status"]
+    if run["failed"] == 0 and run["done"] >= run["total"] and new_status in ("failed", "completed"):
+        new_status = "completed"
+    db.execute(
+        "UPDATE runs SET usage_json = ?, status = ?, finished_at = COALESCE(finished_at, ?) WHERE id = ?",
+        (
+            json.dumps({"tokens_in": usage["ti"], "tokens_out": usage["to_"], "latency_ms": usage["lm"]}),
+            new_status,
+            utcnow(),
+            row["run_id"],
+        ),
+    )
 
 
 async def execute_run(

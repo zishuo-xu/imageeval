@@ -141,6 +141,31 @@ async def test_null_usage_defaults_to_zero(rubric, make_image) -> None:
     assert response.parsed.intent_alignment == 4
 
 
+async def test_non_dict_usage_defaults_to_zero(rubric, make_image) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                valid_judge_payload(), ensure_ascii=False
+                            )
+                        }
+                    }
+                ],
+                "usage": "oops",
+            },
+        )
+
+    provider = _provider(handler, rubric)
+    response = await provider.evaluate("q", make_image())
+    assert response.tokens_in == 0
+    assert response.tokens_out == 0
+    assert response.parsed.intent_alignment == 4
+
+
 async def test_api_key_header_sent_when_env_set(rubric, make_image, monkeypatch) -> None:
     seen: list[str | None] = []
 

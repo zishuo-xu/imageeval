@@ -8,7 +8,10 @@ const review = {
   panX: 0,
   panY: 0,
   focusDim: "adherence",
+  saving: false,
 };
+
+const prefill = (human, ai) => (human ?? (ai == null ? "" : Math.round(ai)));
 
 var escapeHtml = (value) =>
   String(value ?? "").replace(/[&<>"']/g, (ch) => ({
@@ -70,9 +73,9 @@ function render() {
     .join("");
 
   const human = item.human;
-  qs("score-adherence").value = human?.adherence ?? (item.ai.adherence ?? "");
-  qs("score-quality").value = human?.quality ?? (item.ai.quality ?? "");
-  qs("score-aesthetics").value = human?.aesthetics ?? (item.ai.aesthetics ?? "");
+  qs("score-adherence").value = prefill(human?.adherence, item.ai.adherence);
+  qs("score-quality").value = prefill(human?.quality, item.ai.quality);
+  qs("score-aesthetics").value = prefill(human?.aesthetics, item.ai.aesthetics);
   qs("note").value = human?.note ?? "";
   qs("reason-general").value = human?.reasons?.general ?? "";
 
@@ -92,6 +95,9 @@ function render() {
   qs("error-banner").textContent = failed ? item.ai.error || "评分失败" : "";
   qs("error-banner").classList.toggle("hidden", !failed);
   qs("btn-retry").classList.toggle("hidden", !failed);
+  for (const id of ["btn-accept", "btn-save", "btn-skip"]) {
+    qs(id).disabled = failed;
+  }
 }
 
 function applyTransform() {
@@ -100,7 +106,8 @@ function applyTransform() {
 
 async function submit(decision) {
   const item = current();
-  if (!item) return;
+  if (!item || review.saving) return;
+  review.saving = true;
   const payload = {
     decision,
     note: qs("note").value,
@@ -125,6 +132,8 @@ async function submit(decision) {
     render();
   } catch (err) {
     qs("message").textContent = `保存失败：${err.message}`;
+  } finally {
+    review.saving = false;
   }
 }
 
@@ -157,18 +166,20 @@ function prev() {
 }
 
 document.addEventListener("keydown", (event) => {
-  if (event.target.tagName === "BUTTON" && event.key === "Enter") {
-    return;
-  }
   const tag = event.target.tagName;
   if (tag === "INPUT" || tag === "TEXTAREA") {
     if (event.key === "Enter") {
+      if (event.repeat) return;
       event.preventDefault();
       submit("corrected");
     }
     return;
   }
+  if (tag === "SELECT" || tag === "BUTTON") return;
   const key = event.key.toLowerCase();
+  if (event.repeat && (key === "a" || key === "s" || key === "enter")) {
+    return;
+  }
   if (key === "a") {
     event.preventDefault();
     submit("accepted");

@@ -35,7 +35,12 @@
         });
         if (!response.ok) throw new Error(await response.text());
         const result = await response.json();
-        window.open(result.url, "_blank");
+        const link = document.createElement("a");
+        link.href = result.url;
+        link.download = "";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
       } catch (err) {
         alert(`导出失败：${err.message}`);
       } finally {

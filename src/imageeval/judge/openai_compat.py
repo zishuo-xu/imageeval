@@ -99,6 +99,8 @@ class OpenAICompatProvider:
 
         for attempt in (1, 2):
             content, usage = await self._post(messages)
+            if not isinstance(usage, dict):
+                usage = {}
             last_raw = content
             total_in += _as_int(usage.get("prompt_tokens"))
             total_out += _as_int(usage.get("completion_tokens"))

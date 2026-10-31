@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 import pytest
 
@@ -158,6 +159,26 @@ def test_retry_evaluation_retries_only_failed_row(db, cfg, rubric, seed_batch) -
     run = db.query_one("SELECT done, failed FROM runs WHERE id = ?", (run_id,))
     assert run["done"] == 1
     assert run["failed"] == 1
+
+
+def test_retry_evaluation_refreshes_usage_and_settles_failed_run(
+    db, cfg, rubric, seed_batch
+) -> None:
+    batch_id, _ = seed_batch(1)
+    run_id = _run(db, cfg, rubric, batch_id, FakeProvider(fail_times=10))
+
+    failed = db.query_one("SELECT id, status FROM evaluations WHERE run_id = ?", (run_id,))
+    assert failed["status"] == "error"
+    db.execute("UPDATE runs SET status = 'failed' WHERE id = ?", (run_id,))
+
+    asyncio.run(retry_evaluation(db, cfg, FakeProvider(), rubric, failed["id"]))
+
+    run = db.query_one("SELECT * FROM runs WHERE id = ?", (run_id,))
+    assert run["failed"] == 0
+    assert run["status"] == "completed"
+    usage = json.loads(run["usage_json"])
+    assert usage["tokens_in"] > 0
+    assert usage["tokens_out"] > 0
 
 
 def test_retry_evaluation_rejects_unknown_and_ok(db, cfg, rubric, seed_batch) -> None:

@@ -32,3 +32,5 @@ def test_index_and_static_assets(cfg) -> None:
         assert "loadQueue" in js.text
         assert "retryEvaluation" in js.text
         assert "escapeHtml(value.reason" in js.text
+        assert "prefill(" in js.text
+        assert "Math.round(ai)" in js.text

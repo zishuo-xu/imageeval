@@ -59,7 +59,18 @@ def test_partial_credit_and_normal_weight() -> None:
 
 
 def test_critical_contradiction_caps_atomic_component() -> None:
-    assert aggregate_adherence([_req("critical", "contradicted")], 5) == pytest.approx(2.0)
+    reqs = [
+        _req("critical", "satisfied"),
+        _req("critical", "satisfied"),
+        _req("critical", "contradicted"),
+    ]
+    # ratio = 6/9, atomic = 3.67, cap -> 3.0, final = 0.75*3 + 0.25*5 = 3.5
+    assert aggregate_adherence(reqs, 5) == pytest.approx(3.5)
+
+
+def test_empty_requirements_raises() -> None:
+    with pytest.raises(ValueError, match="requirements"):
+        aggregate_adherence([], 5)
 
 
 def test_compute_scores_uses_rubric_weights(rubric) -> None:

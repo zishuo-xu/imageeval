@@ -9,6 +9,7 @@
 <body>
 <div class="report">
   <h1 id="run-title">评测报告</h1>
+  <button id="btn-export-report">导出单文件 HTML</button>
   <div class="hint" id="run-meta"></div>
 
   <h2>概览</h2>
@@ -42,6 +43,7 @@
   <div class="card"><table id="sample-table"></table></div>
 </div>
 <script>{{CHART_JS}}</script>
+<script>window.__STATIC_REPORT__ = {{STATIC_FLAG}};</script>
 <script>window.__REPORT_DATA__ = {{DATA_JSON}};</script>
 <script>{{REPORT_JS}}</script>
 </body>

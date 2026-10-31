@@ -44,6 +44,9 @@ function render() {
     qs("subscores").innerHTML = "";
     qs("image").removeAttribute("src");
     qs("progress-text").textContent = "0 / 0";
+    qs("error-banner").textContent = "";
+    qs("error-banner").classList.add("hidden");
+    qs("btn-retry").classList.add("hidden");
     return;
   }
   review.startedAt = Date.now();
@@ -67,20 +70,28 @@ function render() {
     .join("");
 
   const human = item.human;
-  qs("score-adherence").value = human?.adherence ?? Math.round(item.ai.adherence);
-  qs("score-quality").value = human?.quality ?? Math.round(item.ai.quality);
-  qs("score-aesthetics").value = human?.aesthetics ?? Math.round(item.ai.aesthetics);
+  qs("score-adherence").value = human?.adherence ?? (item.ai.adherence ?? "");
+  qs("score-quality").value = human?.quality ?? (item.ai.quality ?? "");
+  qs("score-aesthetics").value = human?.aesthetics ?? (item.ai.aesthetics ?? "");
   qs("note").value = human?.note ?? "";
+  qs("reason-general").value = human?.reasons?.general ?? "";
 
   const lines = [];
   for (const dim of ["quality", "aesthetics"]) {
     for (const [key, value] of Object.entries(item.ai.subscores[dim] || {})) {
-      lines.push(`<div>${dim}.${key}：${value.score ?? "N/A"} ${value.reason || ""}</div>`);
+      lines.push(
+        `<div>${dim}.${key}：${value.score ?? "N/A"} ${escapeHtml(value.reason || "")}</div>`
+      );
     }
   }
   qs("subscores").innerHTML = lines.join("");
   qs("progress-text").textContent = `${review.index + 1} / ${review.items.length}（筛选共 ${review.total}）`;
   qs("message").textContent = item.ai.verdict || "";
+
+  const failed = item.eval_status === "error";
+  qs("error-banner").textContent = failed ? item.ai.error || "评分失败" : "";
+  qs("error-banner").classList.toggle("hidden", !failed);
+  qs("btn-retry").classList.toggle("hidden", !failed);
 }
 
 function applyTransform() {
@@ -99,6 +110,8 @@ async function submit(decision) {
     payload.human_adherence = Number(qs("score-adherence").value);
     payload.human_quality = Number(qs("score-quality").value);
     payload.human_aesthetics = Number(qs("score-aesthetics").value);
+    const reason = qs("reason-general").value.trim();
+    if (reason) payload.reasons = { general: reason };
   }
   try {
     await postJSON(`/api/evaluations/${item.evaluation_id}/review`, payload);
@@ -119,6 +132,20 @@ function next() {
   if (review.index < review.items.length - 1) {
     review.index += 1;
     render();
+  }
+}
+
+async function retryEvaluation() {
+  const item = current();
+  if (!item) return;
+  qs("btn-retry").disabled = true;
+  try {
+    await postJSON(`/api/evaluations/${item.evaluation_id}/retry`, {});
+    await loadQueue();
+  } catch (err) {
+    qs("message").textContent = `重试失败：${err.message}`;
+  } finally {
+    qs("btn-retry").disabled = false;
   }
 }
 
@@ -159,6 +186,10 @@ document.addEventListener("keydown", (event) => {
     review.panX = 0;
     review.panY = 0;
     applyTransform();
+  } else if (key === "z") {
+    event.preventDefault();
+    review.zoom = review.zoom > 1 ? 1 : 2;
+    applyTransform();
   } else if (/^[1-5]$/.test(key)) {
     qs(`score-${review.focusDim}`).value = key;
     const order = ["adherence", "quality", "aesthetics"];
@@ -184,6 +215,7 @@ window.addEventListener("DOMContentLoaded", () => {
   qs("btn-save").onclick = () => submit("corrected");
   qs("btn-skip").onclick = () => submit("skipped");
   qs("btn-refresh").onclick = () => loadQueue();
+  qs("btn-retry").onclick = () => retryEvaluation();
   qs("filter").onchange = () => loadQueue();
   qs("order").onchange = () => loadQueue();
   document.querySelectorAll(".score-row input").forEach((input) => {

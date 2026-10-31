@@ -61,6 +61,15 @@ def test_float_scores_are_rounded() -> None:
     assert output.intent_alignment == 4
 
 
+def test_float_scores_round_half_up() -> None:
+    assert SubScore(score=2.5).score == 3
+    assert SubScore(score=4.5).score == 5
+
+    data = _valid_payload()
+    data["intent_alignment"] = 4.5
+    assert JudgeOutput.model_validate(data).intent_alignment == 5
+
+
 def test_requires_at_least_one_critical_requirement() -> None:
     data = _valid_payload()
     data["requirements"][0]["criticality"] = "normal"

@@ -69,6 +69,34 @@ def test_accepted_fills_ai_scores(db, cfg, rubric, seed_batch) -> None:
     assert result["human_overall"] == pytest.approx(4.0)
 
 
+def test_accepted_rounds_ai_scores_half_up(db, cfg, rubric, seed_batch) -> None:
+    run_id, _, eval_ids = _seed_run(db, cfg, rubric, seed_batch)
+    db.execute(
+        "UPDATE evaluations SET adherence_score = 4.5 WHERE id = ?", (eval_ids[0],)
+    )
+    result = submit_review(db, cfg, rubric, eval_ids[0], ReviewSubmit(decision="accepted"))
+    assert result["human_adherence"] == 5
+
+
+def test_error_filter_exposes_error_details(db, cfg, rubric, seed_batch) -> None:
+    run_id, sample_ids, _ = _seed_run(db, cfg, rubric, seed_batch)
+    db.execute("DELETE FROM evaluations WHERE sample_id = ?", (sample_ids[0],))
+    db.execute(
+        "INSERT INTO evaluations (id, sample_id, run_id, status, error, parse_attempts, created_at) "
+        "VALUES (?, ?, ?, 'error', 'schema boom', 2, 'now')",
+        (str(uuid.uuid4()), sample_ids[0], run_id),
+    )
+
+    queue = review_queue(db, run_id, "error")
+
+    assert queue["total"] == 1
+    item = queue["items"][0]
+    assert item["state"] == "error"
+    assert item["eval_status"] == "error"
+    assert item["ai"]["error"] == "schema boom"
+    assert item["ai"]["parse_attempts"] == 2
+
+
 def test_corrected_requires_and_persists_scores(db, cfg, rubric, seed_batch) -> None:
     run_id, _, eval_ids = _seed_run(db, cfg, rubric, seed_batch)
     result = submit_review(

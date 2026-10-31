@@ -115,7 +115,14 @@ def _save_ok(
     )
 
 
-def _save_error(db: Database, sample_id: str, run_id: str, error: str) -> None:
+def _save_error(
+    db: Database,
+    sample_id: str,
+    run_id: str,
+    error: str,
+    raw_response: str = "",
+    parse_attempts: int = 1,
+) -> None:
     db.execute(
         _UPSERT_SQL,
         (
@@ -131,8 +138,8 @@ def _save_error(db: Database, sample_id: str, run_id: str, error: str) -> None:
             "{}",
             "",
             "",
-            "",
-            1,
+            raw_response,
+            parse_attempts,
             error,
             0,
             0,
@@ -175,7 +182,37 @@ async def _evaluate_one(
             last_error = exc
             break
 
-    _save_error(db, sample["id"], run_id, str(last_error) if last_error else "unknown error")
+    _save_error(
+        db,
+        sample["id"],
+        run_id,
+        str(last_error) if last_error else "unknown error",
+        raw_response=getattr(last_error, "raw", "") if isinstance(last_error, SchemaJudgeError) else "",
+        parse_attempts=getattr(last_error, "attempts", 1) if isinstance(last_error, SchemaJudgeError) else 1,
+    )
+
+
+async def retry_evaluation(
+    db: Database,
+    cfg: AppConfig,
+    provider: JudgeProvider,
+    rubric: Rubric,
+    evaluation_id: str,
+) -> None:
+    row = db.query_one(
+        "SELECT e.run_id, e.status, s.id AS sample_id, s.query_text, s.image_path "
+        "FROM evaluations e JOIN samples s ON s.id = e.sample_id WHERE e.id = ?",
+        (evaluation_id,),
+    )
+    if row is None:
+        raise LookupError(f"evaluation not found: {evaluation_id}")
+    if row["status"] != "error":
+        raise ValueError("only error evaluations can be retried")
+    await _evaluate_one(
+        db, cfg, provider, rubric, row["run_id"],
+        {"id": row["sample_id"], "query_text": row["query_text"], "image_path": row["image_path"]},
+    )
+    _refresh_counts(db, row["run_id"])
 
 
 async def execute_run(
@@ -350,4 +387,9 @@ class RunManager:
         self._db.execute(
             "UPDATE runs SET status = 'cancelled' WHERE id = ? AND status IN ('running', 'paused')",
             (run_id,),
+        )
+
+    async def retry_evaluation(self, evaluation_id: str) -> None:
+        await retry_evaluation(
+            self._db, self._cfg, self._provider, self._rubric, evaluation_id
         )

@@ -29,7 +29,7 @@ def export_dataset(db: Database, cfg: AppConfig, run_id: str, mode: str) -> Path
         "e.adherence_score, e.quality_score, e.aesthetics_score, e.overall_score, "
         "e.requirements_json, e.subscores_json, e.verdict, "
         "r.decision, r.human_adherence, r.human_quality, r.human_aesthetics, r.human_overall, "
-        "r.note, r.reviewer, r.duration_ms AS review_duration_ms "
+        "r.reasons_json, r.note, r.reviewer, r.duration_ms AS review_duration_ms "
         "FROM samples s "
         "JOIN runs rn ON rn.batch_id = s.batch_id AND rn.id = ? "
         "JOIN evaluations e ON e.sample_id = s.id AND e.run_id = rn.id AND e.status = 'ok' "
@@ -83,6 +83,7 @@ def export_dataset(db: Database, cfg: AppConfig, run_id: str, mode: str) -> Path
                 "note": row["note"] or "",
                 "reviewer": row["reviewer"],
                 "decision": row["decision"],
+                "reasons": json.loads(row["reasons_json"] or "{}"),
             }
             label_quality = "gold"
             final_source = "human"

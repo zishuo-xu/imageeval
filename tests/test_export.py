@@ -21,7 +21,13 @@ def _seed(db, cfg, rubric, seed_batch):
         cfg,
         rubric,
         eval_ids[1],
-        ReviewSubmit(decision="corrected", human_adherence=1, human_quality=2, human_aesthetics=2),
+        ReviewSubmit(
+            decision="corrected",
+            human_adherence=1,
+            human_quality=2,
+            human_aesthetics=2,
+            reasons={"adherence": "主体缺失"},
+        ),
     )
     return run_id
 
@@ -40,6 +46,9 @@ def test_export_raw_contains_gold_and_silver(db, cfg, rubric, seed_batch) -> Non
     assert qualities == ["gold", "gold", "silver"]
     assert (out / "manifest.json").exists()
     assert len(list((out / "images").iterdir())) == 3
+    human_rows = [row["human"] for row in rows if row["human"]]
+    assert all("reasons" in human for human in human_rows)
+    assert {"adherence": "主体缺失"} in [human["reasons"] for human in human_rows]
 
 
 def test_export_sft_only_gold(db, cfg, rubric, seed_batch) -> None:

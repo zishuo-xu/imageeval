@@ -1,7 +1,7 @@
+import asyncio
 import io
 import time
 
-import pytest
 from fastapi.testclient import TestClient
 
 from imageeval.api import create_app
@@ -187,3 +187,46 @@ def test_retry_error_after_completion_requeues(cfg, make_image) -> None:
                     break
             time.sleep(0.1)
         assert requeued
+        assert items[0]["ai"]["error"] is None
+        assert items[0]["ai"]["parse_attempts"] == 1
+
+
+def test_retry_unknown_evaluation_returns_404(cfg) -> None:
+    with _client(cfg) as client:
+        assert client.post("/api/evaluations/nope/retry").status_code == 404
+
+
+class _SlowProvider(FakeProvider):
+    async def evaluate(self, query, image_path):
+        await asyncio.sleep(1.0)
+        return await super().evaluate(query, image_path)
+
+
+def test_retry_while_run_running_returns_409(cfg, make_image) -> None:
+    with _client(cfg, _SlowProvider()) as client:
+        batch_id = _import_csv(client, make_image, None)
+        run_id = client.post(
+            "/api/runs", json={"name": "running", "batch_id": batch_id}
+        ).json()["run_id"]
+
+        state = client.app.state.state
+        sample_id = state.db.query_one(
+            "SELECT id FROM samples WHERE batch_id = ?", (batch_id,)
+        )["id"]
+        state.db.execute(
+            "INSERT INTO evaluations (id, sample_id, run_id, status, error, created_at) "
+            "VALUES ('eval-error', ?, ?, 'error', 'boom', 'now')",
+            (sample_id, run_id),
+        )
+
+        client.post(f"/api/runs/{run_id}/start")
+        retry = client.post("/api/evaluations/eval-error/retry")
+        assert retry.status_code == 409
+
+        for _ in range(100):
+            if client.get(f"/api/runs/{run_id}").json()["run"]["status"] not in (
+                "running",
+                "paused",
+            ):
+                break
+            time.sleep(0.1)

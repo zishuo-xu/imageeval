@@ -23,6 +23,9 @@ def test_migrate_creates_tables_and_is_idempotent(db: Database) -> None:
     migrate(db.conn)
     assert db.query_one("SELECT version FROM schema_version")["version"] == 1
 
+    columns = db.query("PRAGMA table_info(schema_version)")
+    assert [(row["name"], row["pk"]) for row in columns] == [("version", 1)]
+
 
 def test_foreign_keys_enforced(db: Database) -> None:
     with pytest.raises(sqlite3.IntegrityError):

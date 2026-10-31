@@ -27,6 +27,7 @@
       <option value="pending">待复核</option>
       <option value="reviewed">已复核</option>
       <option value="skipped">已跳过</option>
+      <option value="error">评分失败</option>
       <option value="all">全部</option>
     </select>
     <label>排序</label>
@@ -38,7 +39,7 @@
     </select>
     <button id="btn-refresh">刷新队列</button>
     <div id="progress-text" class="hint"></div>
-    <div class="hint">快捷键：A 接受 · J/K 切换 · 1-5 打分 · Enter 保存 · S 跳过 · F 适应图片</div>
+    <div class="hint">快捷键：A 接受 · J/K 切换 · 1-5 打分 · Enter 保存 · S 跳过 · F 适应图片 · Z 缩放</div>
   </aside>
 
   <section class="viewer">
@@ -65,12 +66,15 @@
     </div>
 
     <details><summary class="hint">子项理由</summary><div id="subscores" class="hint"></div></details>
+    <input id="reason-general" placeholder="修正理由（可选）" style="margin-top: 8px">
     <textarea id="note" placeholder="备注（可选）" rows="2"></textarea>
 
+    <div id="error-banner" class="hint hidden"></div>
     <div class="actions">
       <button id="btn-accept" class="primary">接受全部 (A)</button>
       <button id="btn-save">保存修正 (Enter)</button>
       <button id="btn-skip">跳过 (S)</button>
+      <button id="btn-retry" class="hidden">重试本条</button>
     </div>
     <div id="message" class="hint"></div>
   </section>

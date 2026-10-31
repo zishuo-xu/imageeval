@@ -60,3 +60,20 @@ def test_unreadable_source_leaves_no_batch(db, cfg, tmp_path) -> None:
     with pytest.raises(OSError):
         import_file(db, cfg, tmp_path / "missing.csv")
     assert db.query_one("SELECT COUNT(*) AS c FROM import_batches")["c"] == 0
+
+
+def test_import_tags_json_array(db, cfg, make_image, tmp_path) -> None:
+    img = make_image("tags.png", (40, 40))
+    csv_path = tmp_path / "tags.csv"
+    csv_path.write_text(
+        'external_id,query,image,tags\n'
+        f'b1,标签测试,{img.name},"["" tag1 "", ""tag2""]"\n',
+        encoding="utf-8",
+    )
+
+    result = import_file(db, cfg, csv_path)
+
+    row = db.query_one(
+        "SELECT tags_json FROM samples WHERE batch_id = ?", (result.batch_id,)
+    )
+    assert json.loads(row["tags_json"]) == ["tag1", "tag2"]

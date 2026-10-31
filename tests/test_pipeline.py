@@ -1,7 +1,15 @@
 import asyncio
 
+import pytest
+
+from imageeval.judge.base import SchemaJudgeError
 from imageeval.judge.fake import FakeProvider
-from imageeval.pipeline import RunManager, _save_error, execute_run
+from imageeval.pipeline import (
+    RunManager,
+    _save_error,
+    execute_run,
+    retry_evaluation,
+)
 from imageeval.runs import create_run
 
 
@@ -111,6 +119,56 @@ class SlowFakeProvider(FakeProvider):
     async def evaluate(self, query, image_path):
         await asyncio.sleep(0.1)
         return await super().evaluate(query, image_path)
+
+
+class RawSchemaFailProvider:
+    name = "schema-fail"
+    model = "schema-fail-v1"
+
+    async def evaluate(self, query, image_path):
+        raise SchemaJudgeError("invalid judge output after repair: bad", raw="not json", attempts=2)
+
+
+def test_schema_error_persists_raw_response(db, cfg, rubric, seed_batch) -> None:
+    batch_id, _ = seed_batch(1)
+    run_id = _run(db, cfg, rubric, batch_id, RawSchemaFailProvider())
+
+    row = db.query_one("SELECT * FROM evaluations WHERE run_id = ?", (run_id,))
+    assert row["status"] == "error"
+    assert "invalid judge output" in row["error"]
+    assert row["raw_response"] == "not json"
+    assert row["parse_attempts"] == 2
+    assert db.query_one("SELECT failed FROM runs WHERE id = ?", (run_id,))["failed"] == 1
+
+
+def test_retry_evaluation_retries_only_failed_row(db, cfg, rubric, seed_batch) -> None:
+    batch_id, _ = seed_batch(2)
+    run_id = _run(db, cfg, rubric, batch_id, FakeProvider(fail_times=10))
+
+    failed = db.query("SELECT id FROM evaluations WHERE run_id = ? ORDER BY created_at", (run_id,))
+    assert len(failed) == 2
+    target = failed[0]["id"]
+
+    asyncio.run(retry_evaluation(db, cfg, FakeProvider(), rubric, target))
+
+    rows = db.query("SELECT id, status FROM evaluations WHERE run_id = ?", (run_id,))
+    statuses = {row["id"]: row["status"] for row in rows}
+    assert statuses[target] == "ok"
+    assert sorted(statuses.values()) == ["error", "ok"]
+    run = db.query_one("SELECT done, failed FROM runs WHERE id = ?", (run_id,))
+    assert run["done"] == 1
+    assert run["failed"] == 1
+
+
+def test_retry_evaluation_rejects_unknown_and_ok(db, cfg, rubric, seed_batch) -> None:
+    batch_id, _ = seed_batch(1)
+    run_id = _run(db, cfg, rubric, batch_id, FakeProvider())
+    ok_id = db.query_one("SELECT id FROM evaluations WHERE run_id = ?", (run_id,))["id"]
+
+    with pytest.raises(LookupError):
+        asyncio.run(retry_evaluation(db, cfg, FakeProvider(), rubric, "missing"))
+    with pytest.raises(ValueError):
+        asyncio.run(retry_evaluation(db, cfg, FakeProvider(), rubric, ok_id))
 
 
 def test_pause_then_resume_via_manager(db, cfg, rubric, seed_batch) -> None:

@@ -137,6 +137,27 @@ def test_select_failure_cases_thresholds() -> None:
     assert [row["sample_id"] for row in selected] == ["c", "b"]
 
 
+def test_report_buckets_round_ai_scores_half_up(db, cfg, rubric, seed_batch) -> None:
+    run_id, _, eval_ids = _seed(db, cfg, rubric, seed_batch, [(2.5, 2.5, 2.5)])
+    submit_review(
+        db,
+        cfg,
+        rubric,
+        eval_ids[0],
+        ReviewSubmit(
+            decision="corrected",
+            human_adherence=3,
+            human_quality=3,
+            human_aesthetics=3,
+        ),
+    )
+
+    summary = build_summary(db, run_id, rubric)
+
+    assert summary["distributions"]["adherence"]["ai"] == [0, 0, 1, 0, 0]
+    assert summary["agreement"]["confusion"]["adherence"][2][2] == 1
+
+
 def test_spearman() -> None:
     assert spearman([1, 2, 3], [1, 2, 3]) == pytest.approx(1.0)
     assert spearman([1, 2, 3], [3, 2, 1]) == pytest.approx(-1.0)

@@ -6,6 +6,8 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from .util import round_half_up
+
 Score = Annotated[int, Field(ge=1, le=5)]
 Category = Literal["subject", "attribute", "count", "relation", "style", "text_render", "negative"]
 Criticality = Literal["critical", "normal"]
@@ -33,7 +35,7 @@ class SubScore(BaseModel):
         score = data.get("score")
         na = bool(data.get("na", False))
         if isinstance(score, float):
-            score = int(round(score))
+            score = round_half_up(score)
         if na:
             score = None
         return {**data, "score": score, "na": na}
@@ -80,7 +82,7 @@ class JudgeOutput(BaseModel):
         if isinstance(data, dict):
             value = data.get("intent_alignment")
             if isinstance(value, float):
-                data = {**data, "intent_alignment": int(round(value))}
+                data = {**data, "intent_alignment": round_half_up(value)}
         return data
 
     @model_validator(mode="after")

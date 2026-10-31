@@ -21,6 +21,29 @@
   document.getElementById("run-meta").textContent =
     `${data.run.rubric_version} · ${data.run.judge_model} · ${data.counts.total} 张`;
 
+  const exportButton = document.getElementById("btn-export-report");
+  if (window.__STATIC_REPORT__) {
+    exportButton.style.display = "none";
+  } else {
+    exportButton.addEventListener("click", async () => {
+      exportButton.disabled = true;
+      try {
+        const response = await fetch("/api/reports/export", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ run_id: data.run.id }),
+        });
+        if (!response.ok) throw new Error(await response.text());
+        const result = await response.json();
+        window.open(result.url, "_blank");
+      } catch (err) {
+        alert(`导出失败：${err.message}`);
+      } finally {
+        exportButton.disabled = false;
+      }
+    });
+  }
+
   const cards = [
     ["样本数", data.counts.total],
     ["已评分", data.counts.ok],
@@ -79,7 +102,12 @@
     data: {
       datasets: dims.map((dim) => ({
         label: dimNames[dim],
-        data: data.agreement.scatter.filter((p) => p.dim === dim).map((p) => ({ x: p.ai, y: p.human })),
+        data: data.agreement.scatter
+          .filter((p) => p.dim === dim)
+          .map((p) => ({
+            x: p.ai + (Math.random() - 0.5) * 0.08,
+            y: p.human + (Math.random() - 0.5) * 0.08,
+          })),
         backgroundColor: colors[dim],
       })),
     },

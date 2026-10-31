@@ -27,7 +27,9 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument("--batch-id", default=None)
     run_parser.add_argument("--name", default="CLI run")
 
-    subparsers.add_parser("serve", help="启动本地 Web 服务")
+    serve_parser = subparsers.add_parser("serve", help="启动本地 Web 服务")
+    serve_parser.add_argument("--host", default=None)
+    serve_parser.add_argument("--port", type=int, default=None)
 
     report_parser = subparsers.add_parser("report", help="生成静态 HTML 报告")
     report_parser.add_argument("--run-id", required=True)
@@ -88,7 +90,11 @@ def main(argv: list[str] | None = None) -> int:
 
         from .api import create_app
 
-        uvicorn.run(create_app(cfg), host=cfg.host, port=cfg.port)
+        uvicorn.run(
+            create_app(cfg),
+            host=args.host or cfg.host,
+            port=args.port or cfg.port,
+        )
         return 0
 
     if args.command == "report":

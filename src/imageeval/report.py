@@ -12,6 +12,7 @@ from .db import Database
 from .review import counts
 from .rubric.loader import Rubric
 from .storage import resolve_under
+from .util import round_half_up
 
 DIMENSIONS = ("adherence", "quality", "aesthetics")
 
@@ -67,7 +68,7 @@ def _mae(pairs: list[tuple[float, float]]) -> float | None:
 def _hist(values: list[float]) -> list[int]:
     bins = [0, 0, 0, 0, 0]
     for value in values:
-        index = min(4, max(0, int(round(value)) - 1))
+        index = min(4, max(0, round_half_up(value) - 1))
         bins[index] += 1
     return bins
 
@@ -151,7 +152,7 @@ def build_summary(db: Database, run_id: str, rubric: Rubric) -> dict:
         }
         matrix = [[0] * 5 for _ in range(5)]
         for ai_value, human_value in pairs:
-            matrix[min(4, max(0, int(round(ai_value)) - 1))][min(4, max(0, human_value - 1))] += 1
+            matrix[min(4, max(0, round_half_up(ai_value) - 1))][min(4, max(0, human_value - 1))] += 1
         confusion[dim] = matrix
         scatter.extend(
             {"dim": dim, "ai": round(ai_value, 2), "human": human_value}
@@ -278,7 +279,12 @@ def _inline_image(thumb_path: str, data_dir: Path) -> str:
     return f"data:image/jpeg;base64,{encoded}"
 
 
-def render_report_html(summary: dict, data_dir: Path, inline_images: bool = False) -> str:
+def render_report_html(
+    summary: dict,
+    data_dir: Path,
+    inline_images: bool = False,
+    static: bool = False,
+) -> str:
     data = copy.deepcopy(summary)
     for case in data.get("failures", []):
         if inline_images:
@@ -297,6 +303,7 @@ def render_report_html(summary: dict, data_dir: Path, inline_images: bool = Fals
         template.replace("{{TITLE}}", title)
         .replace("{{CSS}}", css)
         .replace("{{CHART_JS}}", chart_js)
+        .replace("{{STATIC_FLAG}}", "true" if static else "false")
         .replace("{{DATA_JSON}}", data_json)
         .replace("{{REPORT_JS}}", report_js)
     )
@@ -307,5 +314,8 @@ def export_static_report(summary: dict, data_dir: Path, out_dir: Path) -> Path:
     run_id = summary["run"]["id"]
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     path = out_dir / f"report_{run_id}_{stamp}.html"
-    path.write_text(render_report_html(summary, data_dir, inline_images=True), encoding="utf-8")
+    path.write_text(
+        render_report_html(summary, data_dir, inline_images=True, static=True),
+        encoding="utf-8",
+    )
     return path

@@ -8,12 +8,13 @@ from .db import Database
 from .models import ReviewSubmit
 from .rubric.loader import Rubric
 from .scoring import compute_overall
-from .util import utcnow
+from .util import round_half_up, utcnow
 
 QUEUE_FILTERS = {
     "pending": "st.state = 'ai_done'",
     "reviewed": "st.state IN ('accepted', 'corrected')",
     "skipped": "st.state = 'skipped'",
+    "error": "st.state = 'error'",
     "all": "1 = 1",
 }
 
@@ -40,6 +41,7 @@ SELECT s.id AS sample_id, s.query_text, s.image_path, s.thumb_path, s.model_name
        e.id AS evaluation_id, e.status AS eval_status,
        e.adherence_score, e.quality_score, e.aesthetics_score, e.overall_score,
        e.requirements_json, e.subscores_json, e.observation, e.verdict,
+       e.error, e.parse_attempts,
        st.state,
        r.id AS review_id, r.decision, r.human_adherence, r.human_quality,
        r.human_aesthetics, r.human_overall, r.note AS review_note,
@@ -66,6 +68,7 @@ def _row_to_item(row) -> dict:
     return {
         "sample_id": row["sample_id"],
         "evaluation_id": row["evaluation_id"],
+        "eval_status": row["eval_status"],
         "state": row["state"],
         "query": row["query_text"],
         "image_url": f"/api/samples/{row['sample_id']}/image?size=orig",
@@ -81,6 +84,8 @@ def _row_to_item(row) -> dict:
             "subscores": json.loads(row["subscores_json"] or "{}"),
             "observation": row["observation"],
             "verdict": row["verdict"],
+            "error": row["error"],
+            "parse_attempts": row["parse_attempts"],
         },
         "human": human,
     }
@@ -124,9 +129,9 @@ def submit_review(
 
     adherence = quality = aesthetics = None
     if payload.decision == "accepted":
-        adherence = payload.human_adherence or int(round(row["adherence_score"]))
-        quality = payload.human_quality or int(round(row["quality_score"]))
-        aesthetics = payload.human_aesthetics or int(round(row["aesthetics_score"]))
+        adherence = payload.human_adherence or round_half_up(row["adherence_score"])
+        quality = payload.human_quality or round_half_up(row["quality_score"])
+        aesthetics = payload.human_aesthetics or round_half_up(row["aesthetics_score"])
     elif payload.decision == "corrected":
         adherence = payload.human_adherence
         quality = payload.human_quality

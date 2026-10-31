@@ -20,6 +20,13 @@ from .base import (
 from .prompts import build_messages
 
 
+def _as_int(value) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
 class OpenAICompatProvider:
     name = "openai_compat"
 
@@ -86,19 +93,17 @@ class OpenAICompatProvider:
         data_url = image_data_url(image_path, self._cfg.image_max_edge)
         messages = build_messages(query, data_url, self._rubric)
         last_error: Exception | None = None
+        last_raw = ""
+        total_in = 0
+        total_out = 0
 
         for attempt in (1, 2):
             content, usage = await self._post(messages)
+            last_raw = content
+            total_in += _as_int(usage.get("prompt_tokens"))
+            total_out += _as_int(usage.get("completion_tokens"))
             try:
                 parsed = parse_judge_output(content)
-                return JudgeResponse(
-                    raw=content,
-                    parsed=parsed,
-                    tokens_in=int(usage.get("prompt_tokens", 0)),
-                    tokens_out=int(usage.get("completion_tokens", 0)),
-                    latency_ms=max(1, int((time.perf_counter() - started) * 1000)),
-                    parse_attempts=attempt,
-                )
             except Exception as exc:
                 last_error = exc
                 messages = messages + [
@@ -108,5 +113,19 @@ class OpenAICompatProvider:
                         "content": f"输出不合法：{exc}。只输出符合 schema 的 JSON 对象，不要输出其他文字。",
                     },
                 ]
+                continue
 
-        raise SchemaJudgeError(f"invalid judge output after repair: {last_error}")
+            return JudgeResponse(
+                raw=content,
+                parsed=parsed,
+                tokens_in=total_in,
+                tokens_out=total_out,
+                latency_ms=max(1, int((time.perf_counter() - started) * 1000)),
+                parse_attempts=attempt,
+            )
+
+        raise SchemaJudgeError(
+            f"invalid judge output after repair: {last_error}",
+            raw=last_raw,
+            attempts=2,
+        )

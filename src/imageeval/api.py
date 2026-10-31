@@ -5,7 +5,7 @@ import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -17,7 +17,7 @@ from .export import export_dataset
 from .importer import import_file
 from .judge import build_provider
 from .models import ReviewSubmit
-from .pipeline import RunManager, execute_run
+from .pipeline import RunManager
 from .report import build_summary, export_static_report, render_report_html
 from .review import counts, review_queue, submit_review
 from .runs import create_run, get_run, list_runs
@@ -42,16 +42,15 @@ class DatasetExportRequest(BaseModel):
 
 
 class _State:
-    def __init__(self, cfg: AppConfig, provider=None):
+    def __init__(self, cfg: AppConfig):
         self.cfg = cfg
-        self.provider = provider
         self.db: Database | None = None
         self.rubric: Rubric | None = None
         self.manager: RunManager | None = None
 
 
 def create_app(cfg: AppConfig, provider=None) -> FastAPI:
-    state = _State(cfg, provider)
+    state = _State(cfg)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -242,19 +241,16 @@ def create_app(cfg: AppConfig, provider=None) -> FastAPI:
     @app.post("/api/evaluations/{evaluation_id}/retry")
     async def api_retry_evaluation(evaluation_id: str) -> dict:
         row = db().query_one(
-            "SELECT e.run_id, e.status, r.status AS run_status FROM evaluations e "
-            "JOIN runs r ON r.id = e.run_id WHERE e.id = ?",
-            (evaluation_id,),
+            "SELECT run_id, status FROM evaluations WHERE id = ?", (evaluation_id,)
         )
         if row is None:
             raise HTTPException(404, "evaluation not found")
         if row["status"] != "error":
             raise HTTPException(409, "only error evaluations can be retried")
-        if row["run_status"] in ("running", "paused"):
-            raise HTTPException(409, "run is active; finish or cancel it before retrying")
         assert state.manager is not None
-        if not state.manager.start(row["run_id"]):
-            raise HTTPException(409, "run is already running")
+        if state.manager.is_running(row["run_id"]):
+            raise HTTPException(409, "run is running; finish or cancel it before retrying")
+        await state.manager.retry_evaluation(evaluation_id)
         return {"ok": True}
 
     @app.get("/api/review/queue")

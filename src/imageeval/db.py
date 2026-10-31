@@ -116,7 +116,7 @@ MIGRATIONS: dict[int, str] = {1: SCHEMA_V1}
 
 def migrate(conn: sqlite3.Connection) -> None:
     conn.executescript(
-        "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);"
+        "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY);"
     )
     row = conn.execute("SELECT version FROM schema_version").fetchone()
     if row is None:

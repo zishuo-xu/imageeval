@@ -5,6 +5,15 @@
   const dimNames = { adherence: "需求遵循", quality: "视觉质量", aesthetics: "美学" };
   const colors = { adherence: "#7c9cff", quality: "#4ecdc4", aesthetics: "#ffb86b" };
 
+  const escapeHtml = (value) =>
+    String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    }[ch]));
+
   const fmt = (v) => (v === null || v === undefined ? "—" : Number(v).toFixed(2));
   const pct = (v) => (v === null || v === undefined ? "—" : (v * 100).toFixed(1) + "%");
 
@@ -84,7 +93,7 @@
   });
 
   const attrRows = data.attribution.by_category
-    .map((row) => `<tr><td>${row.category}</td><td>${row.total}</td><td>${row.failed}</td><td>${pct(row.failure_rate)}</td></tr>`)
+    .map((row) => `<tr><td>${escapeHtml(row.category)}</td><td>${row.total}</td><td>${row.failed}</td><td>${pct(row.failure_rate)}</td></tr>`)
     .join("");
   document.getElementById("table-attribution").innerHTML =
     `<tr><th>类别</th><th>需求数</th><th>失败数</th><th>失败率</th></tr>${attrRows}`;
@@ -104,14 +113,14 @@
   document.getElementById("failure-wall").innerHTML = data.failures
     .map((item) => `
       <div class="card">
-        <img src="${item.image}" alt="">
-        <div class="hint">${item.query}</div>
+        ${item.image ? `<img src="${item.image}" alt="">` : ""}
+        <div class="hint">${escapeHtml(item.query)}</div>
         <div>人工 ${fmt(item.human_overall)} / AI ${fmt(item.ai_overall)}</div>
       </div>`)
     .join("") || '<div class="hint">暂无失败案例</div>';
 
   const sampleRows = data.samples
-    .map((s) => `<tr><td>${s.query}</td><td>${fmt(s.ai.overall)}</td><td>${fmt(s.human.overall)}</td></tr>`)
+    .map((s) => `<tr><td>${escapeHtml(s.query)}</td><td>${fmt(s.ai.overall)}</td><td>${fmt(s.human.overall)}</td></tr>`)
     .join("");
   document.getElementById("sample-table").innerHTML =
     `<tr><th>Query</th><th>AI 总分</th><th>人工总分</th></tr>${sampleRows}`;

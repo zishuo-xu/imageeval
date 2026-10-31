@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import html
 import json
 import math
 from pathlib import Path
@@ -112,9 +113,10 @@ def build_summary(db: Database, run_id: str, rubric: Rubric) -> dict:
     reviewed = _latest_reviews(db, run_id)
     scored = [row for row in reviewed if row["decision"] in ("accepted", "corrected")]
 
-    state_counts = counts(db, run_id)["by_state"]
+    run_counts = counts(db, run_id)
+    state_counts = run_counts["by_state"]
     summary_counts = {
-        "total": counts(db, run_id)["total"],
+        "total": run_counts["total"],
         "ok": len(ai_rows),
         "error": state_counts.get("error", 0),
         "ai_done": state_counts.get("ai_done", 0),
@@ -288,7 +290,7 @@ def render_report_html(summary: dict, data_dir: Path, inline_images: bool = Fals
     chart_js = (WEB_DIR / "vendor" / "chart.umd.js").read_text(encoding="utf-8")
     report_js = (WEB_DIR / "report.js").read_text(encoding="utf-8")
     data_json = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
-    title = f"评测报告 · {data.get('run', {}).get('name', '')}"
+    title = f"评测报告 · {html.escape(str(data.get('run', {}).get('name', '')))}"
 
     return (
         template.replace("{{TITLE}}", title)

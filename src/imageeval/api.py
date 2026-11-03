@@ -1,22 +1,29 @@
 from __future__ import annotations
 
+import json
 import shutil
 import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
+from uuid import UUID
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from .comparison import ComparisonVote, get_comparison, list_experiments, save_vote
 from .config import AppConfig
 from .db import Database, mark_stale_runs, migrate
 from .export import export_dataset
 from .importer import import_file
+from .generation import GenerationManager, GenerationRequest
+from .expansion import ExpansionRequest, effective_config, expand_prompts
 from .judge import build_provider
+from .judge.prompts import prompt_hash
 from .models import ReviewSubmit
+from .feedback import RATINGS, POSITIVE_POINTS, NEGATIVE_POINTS, RATING_CRITERIA
 from .pipeline import RunManager
 from .report import build_summary, export_static_report, render_report_html
 from .review import counts, review_queue, submit_review
@@ -63,14 +70,31 @@ def create_app(cfg: AppConfig, provider=None) -> FastAPI:
         state.db = db
         state.rubric = rubric
         state.manager = RunManager(db, cfg, judge, rubric)
+        state.generation = GenerationManager(cfg, db, rubric, state.manager)
         app.state.state = state
         yield
+        await state.generation.close()
         aclose = getattr(judge, "aclose", None)
         if aclose is not None:
             await aclose()
         db.close()
 
     app = FastAPI(title="imageeval", lifespan=lifespan)
+
+    @app.middleware("http")
+    async def fresh_workspace_assets(request, call_next):
+        is_workspace = request.url.path == "/" or request.url.path.startswith("/static/")
+        if is_workspace:
+            request.scope["headers"] = [(key, value) for key, value in request.scope["headers"]
+                                        if key.lower() not in (b"if-none-match", b"if-modified-since")]
+        response = await call_next(request)
+        if is_workspace:
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @app.get("/api/review/options")
+    def review_options():
+        return {"criteria": RATING_CRITERIA, "ratings": RATINGS, "positive_points": POSITIVE_POINTS, "negative_points": NEGATIVE_POINTS}
 
     def db() -> Database:
         assert state.db is not None
@@ -92,6 +116,70 @@ def create_app(cfg: AppConfig, provider=None) -> FastAPI:
             "configured": bool(cfg.judge.base_url and cfg.judge.model),
             "credential_present": bool(cfg.api_key()),
         }
+
+    @app.get("/api/expansion/config")
+    def expansion_config():
+        import os
+        pe = effective_config(cfg)
+        return {"model": pe.model, "configured": bool(pe.base_url and pe.model and os.environ.get(pe.api_key_env)),
+                "uses_judge_config": cfg.pe is None}
+
+    @app.post("/api/expansion")
+    async def expansion_start(request: ExpansionRequest):
+        try:
+            return await expand_prompts(cfg, request)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.get("/api/comparisons")
+    def comparison_list():
+        return list_experiments(state.generation)
+
+    @app.get("/api/comparisons/{experiment_id}")
+    def comparison_get(experiment_id: UUID, run_id: UUID | None = None):
+        try:
+            return get_comparison(state.generation, db(), experiment_id, run_id)
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    @app.get("/api/comparisons/{experiment_id}/export")
+    def comparison_export(experiment_id: UUID, run_id: UUID | None = None):
+        data = comparison_get(experiment_id, run_id)
+        return Response(json.dumps(data, ensure_ascii=False, indent=2), media_type="application/json",
+                        headers={"Content-Disposition": f'attachment; filename="comparison-{experiment_id}.json"'})
+
+    @app.post("/api/comparisons/{experiment_id}/votes/{pair_id}")
+    def comparison_vote(experiment_id: UUID, pair_id: str, request: ComparisonVote):
+        try:
+            return save_vote(state.generation, db(), experiment_id, pair_id, request)
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.get("/api/generation/config")
+    def generation_config():
+        import os
+        return {"model": cfg.generation.model, "configured": bool(os.environ.get(cfg.generation.api_key_env)),
+                "max_images": 16, "prompt_optimizer": False}
+
+    @app.get("/api/generation/latest")
+    def generation_latest():
+        return state.generation.latest()
+
+    @app.post("/api/generation", status_code=202)
+    async def generation_start(request: GenerationRequest):
+        try:
+            return state.generation.start(request)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.get("/api/generation/{job_id}")
+    def generation_get(job_id: UUID):
+        try:
+            return state.generation.get(job_id)
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
 
     @app.post("/api/import")
     async def api_import(
@@ -147,7 +235,7 @@ def create_app(cfg: AppConfig, provider=None) -> FastAPI:
     ) -> dict:
         rows = db().query(
             "SELECT s.*, e.status AS eval_status, st.state, e.overall_score, "
-            "e.adherence_score, e.quality_score, e.aesthetics_score "
+            "e.adherence_score, e.quality_score, e.aesthetics_score, e.subscores_json "
             "FROM samples s "
             "JOIN runs r ON r.batch_id = s.batch_id AND r.id = ? "
             "LEFT JOIN evaluations e ON e.sample_id = s.id AND e.run_id = r.id "
@@ -162,9 +250,12 @@ def create_app(cfg: AppConfig, provider=None) -> FastAPI:
                     "sample_id": row["id"],
                     "external_id": row["external_id"],
                     "query": row["query_text"],
+                    "prompt_expansion": json.loads(row["metadata_json"]).get("prompt_expansion"),
                     "state": row["state"],
                     "model_name": row["model_name"],
                     "thumb_url": f"/api/samples/{row['id']}/image?size=thumb",
+                    "feedback": json.loads(row["subscores_json"] or "{}").get("feedback"),
+                    "checks": json.loads(row["subscores_json"] or "{}").get("checks", []),
                     "ai": {
                         "adherence": row["adherence_score"],
                         "quality": row["quality_score"],
@@ -215,6 +306,15 @@ def create_app(cfg: AppConfig, provider=None) -> FastAPI:
             raise HTTPException(400, str(exc)) from exc
         return {"run_id": run_id}
 
+    @app.post("/api/runs/{run_id}/upgrade")
+    def upgrade_run(run_id: str):
+        try:
+            old = get_run(db(), run_id)
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        new_id = create_run(db(), cfg, rubric(), old["batch_id"], old["name"] + " · 细项评分")
+        return {"run_id": new_id}
+
     @app.get("/api/runs")
     def api_list_runs(batch_id: str | None = None) -> list[dict]:
         return list_runs(db(), batch_id)
@@ -229,9 +329,11 @@ def create_app(cfg: AppConfig, provider=None) -> FastAPI:
     @app.post("/api/runs/{run_id}/start")
     async def api_start_run(run_id: str) -> dict:
         assert state.manager is not None
-        existing = db().query_one("SELECT status FROM runs WHERE id = ?", (run_id,))
+        existing = db().query_one("SELECT status, prompt_hash FROM runs WHERE id = ?", (run_id,))
         if existing is None:
             raise HTTPException(404, "run not found")
+        if existing["prompt_hash"] != prompt_hash(rubric()):
+            raise HTTPException(409, "此评测使用旧评分规则，请点击按新规则重评，保留历史结果")
         if not state.manager.start(run_id):
             raise HTTPException(409, "run is already running")
         return {"ok": True}
@@ -260,6 +362,9 @@ def create_app(cfg: AppConfig, provider=None) -> FastAPI:
         assert state.manager is not None
         if state.manager.is_running(row["run_id"]):
             raise HTTPException(409, "run is running; finish or cancel it before retrying")
+        run = get_run(db(), row["run_id"])
+        if run["prompt_hash"] != prompt_hash(rubric()):
+            raise HTTPException(409, "此评测使用旧评分规则，请新建评测后重评")
         await state.manager.retry_evaluation(evaluation_id)
         return {"ok": True}
 

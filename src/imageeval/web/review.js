@@ -7,7 +7,8 @@ const review = {
   zoom: 1,
   panX: 0,
   panY: 0,
-  focusDim: "adherence",
+  options: null,
+  drafts: {},
   saving: false,
   queueRequest: 0,
   page: 0,
@@ -16,7 +17,7 @@ const review = {
   loading: false,
 };
 
-const prefill = (human, ai) => (human ?? (ai == null ? "" : Math.round(ai)));
+
 
 var escapeHtml = (value) =>
   String(value ?? "").replace(/[&<>"']/g, (ch) => ({
@@ -26,6 +27,26 @@ var escapeHtml = (value) =>
     '"': "&quot;",
     "'": "&#39;",
   }[ch]));
+
+function readFeedback() {
+  return {feedback: {
+    rating: document.querySelector('input[name="satisfaction"]:checked')?.value || "",
+    positive_points: Array.from(document.querySelectorAll('#positive-points input:checked'), n => n.value),
+    negative_points: Array.from(document.querySelectorAll('#negative-points input:checked'), n => n.value),
+  }, note: qs("note").value};
+}
+function renderFeedback(item) {
+  const draft = review.drafts[item?.evaluation_id] || item?.human || {};
+  const feedback = draft.feedback || {};
+  const options = review.options;
+  qs("satisfaction-options").innerHTML = (options?.ratings || []).map(label => `<label><input type="radio" name="satisfaction" value="${escapeHtml(label)}" ${feedback.rating === label ? "checked" : ""}><span title="${escapeHtml(options.criteria[label])}">${escapeHtml(label)}</span></label>`).join("");
+  for (const [id, key] of [["positive-points", "positive_points"], ["negative-points", "negative_points"]]) {
+    qs(id).innerHTML = (options?.[key] || []).map(label => `<label><input type="checkbox" value="${escapeHtml(label)}" ${(feedback[key] || []).includes(label) ? "checked" : ""}><span>${escapeHtml(label)}</span></label>`).join("");
+  }
+  qs("feedback-points").classList.toggle("hidden", !feedback.rating);
+  qs("note").value = draft.note || "";
+  updateReviewControls();
+}
 
 function current() {
   return review.items[review.index];
@@ -62,9 +83,11 @@ async function loadQueue() {
 
 function updateReviewControls() {
   const item = current();
-  for (const id of ["btn-accept", "btn-save", "btn-skip", "score-adherence", "score-quality", "score-aesthetics", "reason-general", "note"]) {
+  for (const id of ["btn-save", "btn-skip", "note"]) {
     qs(id).disabled = !item || item.eval_status === "error" || review.saving || review.loading;
   }
+  document.querySelectorAll(".satisfaction-options input, .feedback-points input").forEach(input => { input.disabled = !item || item.eval_status === "error" || review.saving || review.loading; });
+  qs("btn-save").disabled ||= !review.options;
   qs("btn-prev").disabled = review.saving || review.loading || (review.page === 0 && review.index === 0) || !item;
   qs("btn-next").disabled = review.saving || review.loading || review.page * review.pageSize + review.index >= review.total - 1 || !item;
   qs("btn-fit").disabled = qs("btn-zoom").disabled = qs("btn-detail").disabled = !item;
@@ -73,19 +96,19 @@ function updateReviewControls() {
   qs("gallery").querySelectorAll("button").forEach(button => { button.disabled = review.saving || review.loading; });
 }
 
-const stateLabels = {ai_done: "待复核", accepted: "已接受", corrected: "已修正", skipped: "已跳过", error: "评分失败"};
+const stateLabels = {rated: "已评价",ai_done: "待复核", accepted: "已接受", corrected: "已修正", skipped: "已跳过", error: "评分失败"};
 const scoreText = value => value == null ? "—" : Number(value).toFixed(1);
 
 function renderGallery() {
   if (review.galleryItems !== review.items) {
   review.galleryItems = review.items;
   qs("gallery").innerHTML = review.items.map((item, index) => {
-    const reviewed = ["accepted", "corrected"].includes(item.state);
+    const reviewed = ["accepted", "corrected", "rated"].includes(item.state);
     return `<button class="image-card ${index === review.index ? "selected" : ""}" data-index="${index}" aria-pressed="${index === review.index}" aria-label="第 ${review.page * review.pageSize + index + 1} 张：${escapeHtml(item.query)}" title="${escapeHtml(item.query)} · 双击查看大图">
       <img src="${escapeHtml(item.thumb_url)}" alt="" loading="lazy">
       <span class="card-state ${reviewed ? "reviewed" : item.state}">${stateLabels[item.state] || escapeHtml(item.state)}</span>
       <div class="card-caption"><div class="card-query">${review.page * review.pageSize + index + 1}. ${escapeHtml(item.query)}</div>
-      <div class="card-scores"><span>遵 ${scoreText(item.ai.adherence)}</span><span>质 ${scoreText(item.ai.quality)}</span><span>美 ${scoreText(item.ai.aesthetics)}</span><span>${reviewed ? "人工 " + scoreText(item.human.overall) : "AI " + scoreText(item.ai.overall)}</span></div></div>
+      <div class="card-scores"><span>AI：${escapeHtml(item.ai.feedback?.rating || "未评价")}</span><span>${item.human?.feedback ? "人工：" + escapeHtml(item.human.feedback.rating) : ""}</span></div></div>
     </button>`;
   }).join("") + (review.items.length ? Array.from({length: review.pageSize - review.items.length}, () => '<div class="empty-slot" aria-hidden="true">—</div>').join("") : "");
   }
@@ -131,14 +154,14 @@ function render() {
   qs("empty-state").classList.toggle("hidden", !!item);
   qs("sample-position").textContent = item ? `选中 ${review.page * review.pageSize + review.index + 1} / ${review.total}` : "暂无样本";
   if (!item) {
+    renderPromptProvenance("review", null);
+    qs("review-checks").innerHTML = "";
     qs("state-badge").textContent = "";
     for (const id of ["sample-meta", "ai-observation", "ai-verdict"]) qs(id).textContent = "";
     qs("message").textContent = "";
-    for (const dim of ["adherence", "quality", "aesthetics"]) {
-      qs(`score-${dim}`).value = "";
-      qs(`ai-${dim}`).textContent = "";
-    }
-    qs("note").value = qs("reason-general").value = "";
+    qs("ai-feedback").innerHTML = "";
+    qs("note").value = "";
+    renderFeedback(null);
     qs("empty-title").textContent = review.runId ? "当前队列暂无样本" : "从一批图片开始";
     qs("empty-description").textContent = review.runId ? "评分完成后可在此复核；也可以切换筛选查看其他样本。" : "导入 CSV 或 JSONL，创建评测后开始 AI 评分。";
     qs("btn-empty-import").classList.toggle("hidden", !!review.runId);
@@ -153,8 +176,10 @@ function render() {
     return;
   }
   review.startedAt = Date.now();
-  qs("state-badge").textContent = ({ai_done: "待复核", pending: "待复核", accepted: "已接受", corrected: "已修正", reviewed: "已复核", skipped: "已跳过", error: "评分失败"})[item.state] || item.state;
+  qs("state-badge").textContent = ({rated: "已评价", ai_done: "待复核", pending: "待复核", accepted: "已接受", corrected: "已修正", reviewed: "已复核", skipped: "已跳过", error: "评分失败"})[item.state] || item.state;
   qs("query").textContent = item.query;
+  renderPromptProvenance("review", item.prompt_expansion);
+  qs("review-checks").innerHTML = visualChecksHTML(item.ai.subscores.checks || []);
   qs("sample-meta").textContent = `${item.model_name || "未标注生图模型"} · ${item.tags.join(" / ") || "无标签"}`;
   qs("ai-observation").textContent = item.ai.observation || "";
   qs("ai-verdict").textContent = item.ai.verdict || "";
@@ -175,19 +200,15 @@ function render() {
     )
     .join("");
 
-  for (const dim of ["adherence", "quality", "aesthetics"]) qs(`ai-${dim}`).textContent = `AI ${item.ai[dim] ?? "—"} / 5`;
+  qs("ai-feedback").innerHTML = feedbackHTML(item.ai.feedback);
   const human = item.human;
-  qs("score-adherence").value = prefill(human?.adherence, item.ai.adherence);
-  qs("score-quality").value = prefill(human?.quality, item.ai.quality);
-  qs("score-aesthetics").value = prefill(human?.aesthetics, item.ai.aesthetics);
-  qs("note").value = human?.note ?? "";
-  qs("reason-general").value = human?.reasons?.general ?? "";
+  renderFeedback(item);
 
   const lines = [];
   for (const dim of ["quality", "aesthetics"]) {
     for (const [key, value] of Object.entries(item.ai.subscores[dim] || {})) {
       lines.push(
-        `<div>${dim}.${key}：${value.score ?? "N/A"} ${escapeHtml(value.reason || "")}</div>`
+        `<div>${dim}.${key}：${escapeHtml(value.reason || "")}</div>`
       );
     }
   }
@@ -210,9 +231,9 @@ function applyTransform() {
 async function submit(decision) {
   const item = current();
   if (!item || item.eval_status === "error" || review.saving || review.loading) return;
-  if (decision === "corrected") {
-    const valid = ["adherence", "quality", "aesthetics"].every(dim => qs(`score-${dim}`).value !== "" && qs(`score-${dim}`).checkValidity());
-    if (!valid) { qs("message").textContent = "请填写 1–5 之间的整数评分。"; return; }
+  const draft = readFeedback();
+  if (decision === "rated" && !draft.feedback.rating) {
+    qs("message").textContent = "请先选择满意度。"; return;
   }
   review.saving = true;
   updateReviewControls();
@@ -221,17 +242,12 @@ async function submit(decision) {
     note: qs("note").value,
     duration_ms: Date.now() - review.startedAt,
   };
-  if (decision === "corrected") {
-    payload.human_adherence = Number(qs("score-adherence").value);
-    payload.human_quality = Number(qs("score-quality").value);
-    payload.human_aesthetics = Number(qs("score-aesthetics").value);
-    const reason = qs("reason-general").value.trim();
-    if (reason) payload.reasons = { general: reason };
-  }
+  if (decision === "rated") payload.feedback = draft.feedback;
   try {
     await postJSON(`/api/evaluations/${item.evaluation_id}/review`, payload);
+    delete review.drafts[item.evaluation_id];
     const refreshed = await loadQueue();
-    if (refreshed) qs("message").textContent = ({accepted: "已接受 AI 评分", corrected: "修正已保存", skipped: "已跳过该样本"})[decision];
+    if (refreshed) qs("message").textContent = ({rated: "评价已保存", skipped: "已跳过该样本"})[decision];
   } catch (err) {
     qs("message").textContent = `保存失败：${err.message}`;
   } finally {
@@ -271,13 +287,13 @@ function prev() {
 }
 
 document.addEventListener("keydown", (event) => {
-  if (!qs("modal-import").classList.contains("hidden") || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+  if (document.body.dataset.stage !== "review" || document.querySelector(".modal:not(.hidden), dialog[open]") || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
   const tag = event.target.tagName;
   if (tag === "INPUT" || tag === "TEXTAREA") {
     if (event.key === "Enter" && event.target.closest(".panel") && tag !== "TEXTAREA") {
       if (event.repeat) return;
       event.preventDefault();
-      submit("corrected");
+      submit("rated");
     }
     return;
   }
@@ -286,10 +302,7 @@ document.addEventListener("keydown", (event) => {
   if (event.repeat && (key === "a" || key === "s" || key === "enter")) {
     return;
   }
-  if (key === "a") {
-    event.preventDefault();
-    submit("accepted");
-  } else if (key === "s") {
+  if (key === "s") {
     event.preventDefault();
     submit("skipped");
   } else if (key === "j") {
@@ -310,15 +323,11 @@ document.addEventListener("keydown", (event) => {
     review.zoom = review.zoom > 1 ? 1 : 2;
     applyTransform();
   } else if (/^[1-5]$/.test(key)) {
-    qs(`score-${review.focusDim}`).value = key;
-    const order = ["adherence", "quality", "aesthetics"];
-    review.focusDim = order[(order.indexOf(review.focusDim) + 1) % order.length];
-    document
-      .querySelectorAll(".score-row")
-      .forEach((row) => row.classList.toggle("focused", row.dataset.dim === review.focusDim));
+    const input = document.querySelectorAll('input[name="satisfaction"]')[Number(key)-1];
+    if (input && !input.disabled) { input.checked = true; input.dispatchEvent(new Event("change", {bubbles:true})); }
   } else if (key === "enter") {
     event.preventDefault();
-    submit("corrected");
+    submit("rated");
   }
 });
 
@@ -350,21 +359,22 @@ window.addEventListener("DOMContentLoaded", () => {
   qs("btn-next").onclick = next;
   qs("btn-fit").onclick = () => { setView("detail"); review.zoom = 1; review.panX = review.panY = 0; applyTransform(); };
   qs("btn-zoom").onclick = () => { setView("detail"); review.zoom = review.zoom > 1 ? 1 : 2; applyTransform(); };
-  qs("btn-accept").onclick = () => submit("accepted");
-  qs("btn-save").onclick = () => submit("corrected");
+  qs("btn-save").onclick = () => submit("rated");
   qs("btn-skip").onclick = () => submit("skipped");
   qs("btn-refresh").onclick = () => loadQueue();
   qs("btn-retry").onclick = () => retryEvaluation();
   qs("filter").onchange = resetQueue;
   qs("order").onchange = resetQueue;
-  document.querySelectorAll(".score-row input").forEach((input) => {
-    input.addEventListener("focus", () => {
-      review.focusDim = input.closest(".score-row").dataset.dim;
-      document
-        .querySelectorAll(".score-row")
-        .forEach((row) => row.classList.toggle("focused", row.dataset.dim === review.focusDim));
+  for (const id of ["satisfaction-options", "positive-points", "negative-points", "note"]) {
+    qs(id).addEventListener(id === "note" ? "input" : "change", () => {
+      if (!current()) return;
+      review.drafts[current().evaluation_id] = readFeedback();
+      qs("feedback-points").classList.toggle("hidden", !readFeedback().feedback.rating);
     });
-  });
+  }
+  getJSON("/api/review/options").then(options => {
+    review.options = options; review.galleryItems = null; render();
+  }).catch(err => { qs("message").textContent = `评价选项加载失败，请刷新：${err.message}`; });
 
   const wrap = qs("image-wrap");
   let dragging = false;

@@ -3,23 +3,84 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>生图评测 · 标注台</title>
+<title>ImageEval · 图片生产与质检</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/style.css?v=20261102-feedback">
 </head>
-<body class="workspace">
+<body class="workspace" data-stage="expand">
 <header class="topbar">
-  <div class="brand"><span class="brand-mark">◈</span><div><strong>ImageEval</strong><span class="brand-caption">生图评测工作台</span></div></div>
+  <div class="brand"><span class="brand-mark">◈</span><div><strong>ImageEval</strong><span class="brand-caption">图片生产与质检</span></div></div>
   <div class="topbar-context">AI 预标注 <span>／</span> 人工复核 <span>／</span> 数据沉淀</div>
-  <button id="btn-import" class="primary">＋ 导入数据</button>
+  <button id="btn-generate">✦ 新建生图</button>
+  <button id="btn-import">＋ 导入数据</button>
 </header>
+<nav class="workflow-steps" aria-label="评测流程">
+  <button id="step-expand" class="workflow-step" aria-current="step"><span class="step-number">01</span><span><strong>Query / PE 扩写</strong></span><span id="step-expand-state" class="step-state">可跳过</span></button><span class="step-arrow">→</span>
+  <button id="step-generate" class="workflow-step"><span class="step-number">02</span><span><strong>生图</strong><small>提示词 → 图片批次</small></span><span id="step-generate-state" class="step-state">MiniMax</span></button>
+  <span class="step-arrow">→</span>
+  <button id="step-score" class="workflow-step"><span class="step-number">03</span><span><strong>质量检查</strong><small>图片批次 → 满意度与问题点</small></span><span id="step-score-state" class="step-state">待选择评测</span></button>
+  <span class="step-arrow">→</span>
+  <button id="step-review" class="workflow-step"><span class="step-number">04</span><span><strong>人工复核</strong><small>修正评分 → 导出数据</small></span><span class="step-state">4 × 4 工作台</span></button>
+<button id="step-compare" class="workflow-step"><strong>前后图片对比</strong></button></nav>
 <section class="run-toolbar" aria-label="评测管理">
-  <div class="toolbar-group"><label for="batch-select">数据批次</label><select id="batch-select" title="导入批次"></select></div>
-  <div class="toolbar-group create-group"><label for="run-name">新建评测</label><div class="inline-controls"><input id="run-name" placeholder="输入评测名称"><button id="btn-create-run">创建</button></div></div>
   <div class="toolbar-group"><label for="run-select">当前评测</label><select id="run-select" title="选择评测"></select></div>
-  <div class="run-controls"><button id="btn-start" class="primary" disabled>开始评分</button><button id="btn-pause" disabled>暂停</button><a id="report-link" target="_blank" rel="noopener" class="button-link" aria-disabled="true">查看报告 ↗</a></div>
+  <button id="btn-upgrade-run" disabled>重新质检</button><button id="btn-manage-runs" aria-expanded="false" aria-controls="run-builder">＋ 新建质检任务</button><div class="run-controls"><button id="btn-start" class="primary" disabled>开始评分</button><button id="btn-pause" disabled>暂停</button><a id="report-link" target="_blank" rel="noopener" class="button-link" aria-disabled="true">报告与导出 ↗</a></div>
 </section>
+<section id="run-builder" class="run-builder hidden">  <div class="toolbar-group"><label for="batch-select">数据批次</label><select id="batch-select" title="导入批次"></select></div>
+  <div class="toolbar-group create-group"><label for="run-name">新建质检任务</label><div class="inline-controls"><input id="run-name" placeholder="输入任务名称"><button id="btn-create-run">创建</button></div></div>
+<p class="hint">从已有图片批次创建新评测；生图完成后会自动创建，无需重复操作。</p></section>
 <div class="statusbar"><span id="run-progress">导入数据，开始第一次评测</span><span id="judge-status">正在读取裁判配置…</span><span id="run-message" role="status" aria-live="polite"></span></div>
+
+
+<section id="expansion-stage" class="expansion-stage">
+  <section class="card pe-input"><h2>从用户的原始需求开始</h2><p class="hint">每行一个 Query，最多 16 条。图片的主评分始终以这些原始需求为准。</p>
+    <label for="pe-queries">原始需求</label>
+    <div class="random-query-controls"><input id="pe-random-count" type="number" min="1" max="16" step="1" value="16" aria-label="随机指令条数"><span class="hint">条</span><button id="btn-random-queries" type="button" title="随机组合不同场景的简短需求，替换输入框内容">随机生成</button><button id="btn-undo-random" type="button" class="hidden">撤销</button></div>
+    <textarea id="pe-queries" placeholder="一只猫&#10;森林里的小屋&#10;咖啡店海报"></textarea>
+    <p id="pe-config" class="hint">正在读取 PE 模型…</p>
+    <div class="actions"><button id="btn-expand" class="primary">扩写提示词</button><button id="btn-skip-pe">跳过，直接生图 →</button></div>
+    <p id="pe-message" class="hint" role="status" aria-live="polite"></p>
+  </section>
+  <section class="card pe-output"><div class="stage-output-header"><div><h2>检查扩写结果</h2><p class="hint">左侧为用户要求；右侧为 PE 补充后的提示词，可逐条编辑。新增细节不等同于用户要求。</p></div><div class="inline-controls"><button id="btn-plan-ab" disabled>生成前后对比图片</button><button id="btn-use-pe" class="primary" disabled>使用扩写结果生图 →</button></div></div>
+    <div id="pe-results"><div class="stage-empty">输入简短 Query，再点击“扩写提示词”。<br>确认新增细节没有偏离用户意图后再生图。</div></div>
+    <p id="pe-result-meta" class="hint"></p>
+  </section>
+</section>
+<section id="generation-stage" class="generation-stage">
+  <form id="generation-form" class="card">
+    <div class="section-eyebrow">01 / GENERATE</div><h2 id="generation-title">创建生图任务</h2>
+    <p id="generation-config" class="hint">正在读取模型配置…</p>
+    <label for="generation-name">任务名称</label><input id="generation-name" value="图片生成任务" required maxlength="100">
+    <div id="generation-pe-context" class="hint"></div><div class="prompt-heading"><label for="generation-prompts">实际生图提示词 <span class="hint">每行一条</span></label><button id="btn-reuse-prompts" type="button" disabled>复用上次</button></div>
+    <textarea id="generation-prompts" rows="6" required placeholder="一只红色的猫坐在窗台上，阳光从左侧照进来&#10;两只蓝色的鸟停在树枝上，背景是雪山"></textarea>
+    <div class="inline-controls"><div class="toolbar-group"><label for="generation-count">每条生成</label><select id="generation-count"><option value="1">1 张</option><option value="2">2 张</option><option value="4">4 张</option></select></div>
+    <div class="toolbar-group"><label for="generation-ratio">画面比例</label><select id="generation-ratio"><option>1:1</option><option>16:9</option><option>4:3</option><option>3:2</option><option>2:3</option><option>3:4</option><option>9:16</option></select></div></div>
+    <p id="generation-estimate" class="hint" aria-live="polite">每批最多 16 张，保留原始提示词，不启用自动改写。</p>
+    <label><input id="generation-ab" type="checkbox"> 同时生成原始版与扩写版图片</label><label><input id="generation-score" type="checkbox" checked> 生成后自动评分</label>
+    <p class="hint">生成图片会保存到本地，并作为下一步 质量检查的输入。可切换步骤，任务在后台继续。</p>
+    <div class="generation-submit-area"><span id="draft-status" class="hint"></span><div class="actions"><button id="btn-generation-submit" class="primary" type="submit">生成并导入</button></div>
+    <div id="generation-message" class="hint" role="status"></div></div>
+  </form>
+  <section class="generation-output card"><div class="stage-output-header"><div><div class="section-eyebrow">OUTPUT / 图片批次</div><h2>图片批次 <span class="hint">4 × 4 · 点击查看大图</span></h2></div><button id="btn-generation-result" class="primary" disabled>进入 质量检查 →</button></div>
+    <div id="generation-banner"><span id="generation-status" role="status" aria-live="polite">填写左侧提示词，生成结果会显示在这里。</span></div>
+    <progress id="generation-progress" max="16" value="0" aria-label="生图进度"></progress><div id="generation-preview" class="stage-gallery"><div class="stage-empty">每条提示词可生成多个候选<br><span class="hint">最多 16 张 / 批 · 图片与原始提示词一起保留</span></div></div>
+    <div id="generation-output-meta" class="hint"></div>
+  </section>
+</section>
+<section id="scoring-stage" class="scoring-stage">
+  <div class="scoring-heading"><div><div class="section-eyebrow">02 / EVALUATE</div><h2>质量检查 <span class="hint">遵循 · 质量 · 美学</span></h2><p class="hint">检查评分结果，点击图片查看细节，再进入人工复核。</p></div><button id="btn-to-review" class="primary">进入人工复核 →</button></div>
+  <div class="scoring-stats"><div><span>样本总数</span><strong id="score-total">—</strong></div><div><span>已评分</span><strong id="score-done">—</strong></div><div><span>评分失败</span><strong id="score-failed">—</strong></div><div><span>裁判模型</span><strong id="score-model">—</strong></div></div>
+  <div id="score-preview" class="stage-gallery"></div>
+  <div class="viewer-footer"><button id="score-prev-page" disabled>← 上一页</button><span id="score-page-position" class="hint"></span><button id="score-next-page" disabled>下一页 →</button></div>
+</section>
+
+<section id="comparison-stage" class="comparison-stage">
+  <div class="comparison-heading"><div><h2>扩写前后图片对比</h2><p class="hint">原始提示词 · 确认后的扩写。相同生图模型、比例、数量，主评分均按原始 Query；未固定随机种子，两次生成存在随机差异。</p></div><button id="ab-new">新建生图任务</button></div>
+  <div class="inline-controls"><select id="ab-experiment" aria-label="对比任务"></select><select id="ab-score-run" aria-label="质检版本"></select><button id="ab-upgrade">重新质检</button><button id="ab-refresh">刷新</button><button id="ab-score">开始 / 继续评分</button><a id="ab-export" class="button-link" aria-disabled="true">导出对比 JSON</a></div>
+  <p id="ab-status" class="hint" role="status"></p><div id="ab-summary" class="ab-summary"></div>
+  <div class="ab-workspace"><aside id="ab-pairs" aria-label="Query 对比队列"></aside><div class="ab-detail"><div id="ab-query"></div><div id="ab-pair-delta" class="hint"></div><div id="ab-images" class="ab-images"><div class="stage-empty">在 PE 扩写页创建 对比任务，同时生成扩写前后的图片。</div></div>
+  <div id="ab-vote" class="ab-vote hidden"><label for="ab-winner">成图选择</label><select id="ab-winner"><option value="">请选择</option><option value="A">原始版更好</option><option value="B">扩写版更好</option><option value="tie">持平</option></select><input id="ab-note" maxlength="2000" placeholder="选择理由（可选）" aria-label="选择理由"><button id="ab-save" class="primary">保存选择</button><span id="ab-save-status" class="hint" role="status"></span></div></div></div>
+</section>
 
 <main class="review">
   <aside class="filters">
@@ -40,14 +101,14 @@
     </select>
     <button id="btn-refresh">刷新队列</button>
     <div id="progress-text" class="hint"></div>
-    <details class="keyboard-help"><summary>键盘快捷键</summary><p><kbd>A</kbd> 接受评分 <kbd>S</kbd> 跳过</p><p><kbd>J</kbd> 下一张 <kbd>K</kbd> 上一张</p><p><kbd>1–5</kbd> 打分 <kbd>Enter</kbd> 保存</p><p><kbd>F</kbd> 适应 <kbd>Z</kbd> 缩放</p></details>
+    <details class="keyboard-help"><summary>键盘快捷键</summary><p><kbd>S</kbd> 跳过</p><p><kbd>J</kbd> 下一张 <kbd>K</kbd> 上一张</p><p><kbd>1–5</kbd> 选择满意度 <kbd>Enter</kbd> 保存</p><p><kbd>F</kbd> 适应 <kbd>Z</kbd> 缩放</p></details>
   </aside>
 
   <section class="viewer">
     <div class="viewer-toolbar"><div><span class="section-label">图片总览</span><span class="hint"> · 4 × 4 / 每页 16 张</span></div><div class="view-controls"><button id="btn-grid" aria-pressed="true">网格</button><button id="btn-detail" aria-pressed="false">单图</button><button id="btn-fit" title="适应图片（F）">适应</button><button id="btn-zoom" title="切换缩放（Z）">放大</button></div></div>
     <div id="gallery" class="gallery" aria-label="图片评测网格"></div>
     <div id="image-wrap" class="hidden"><img id="image" alt="当前评测图片" class="hidden" draggable="false"></div>
-    <div id="empty-state" class="empty-state"><span class="empty-icon">▧</span><h2 id="empty-title">从一批图片开始</h2><p id="empty-description">导入 CSV 或 JSONL，创建评测后开始 AI 评分。</p><button id="btn-empty-import" class="primary">导入数据</button></div>
+    <div id="empty-state" class="empty-state"><span class="empty-icon">▧</span><h2 id="empty-title">从一批图片开始</h2><p id="empty-description">导入 CSV 或 JSONL，创建评测后开始 质量检查。</p><button id="btn-empty-import" class="primary">导入数据</button></div>
     <div class="viewer-footer"><div class="inline-controls"><button id="btn-prev-page" disabled>← 上一页</button><span id="page-position" class="hint">第 0 / 0 页</span><button id="btn-next-page" disabled>下一页 →</button></div><span id="sample-position" class="hint">暂无样本</span><div class="inline-controls"><button id="btn-prev" disabled title="上一张（K）">← 上一张</button><button id="btn-next" disabled title="下一张（J）">下一张 →</button></div></div>
 
   </section>
@@ -56,32 +117,28 @@
     <div class="section-label">标注与复核</div>
     <div id="state-badge" class="badge"></div><div id="sample-meta" class="hint"></div>
     <h2>原始提示词 <span class="hint">Query</span></h2>
-    <p id="query"></p>
+    <p id="query"></p><p class="hint">主评分依据：原始需求</p><details id="review-pe" class="hidden"><summary>查看实际生图提示词 / PE 来源</summary><p id="review-generation-prompt"></p><p id="review-pe-meta" class="hint"></p></details>
 
 
-    <h2>人工评分 <span class="hint">1–5 分 · 已预填 AI 分</span></h2>
-    <div class="score-row" data-dim="adherence">
-      <label for="score-adherence">需求遵循<span id="ai-adherence" class="ai-score"></span></label><input id="score-adherence" type="number" min="1" max="5" step="1">
+    <h2>你的评价 <span class="hint">请选择满意度</span></h2>
+    <div id="satisfaction-options" class="satisfaction-options" role="radiogroup" aria-label="满意度"></div>
+    <div id="feedback-points" class="hidden">
+      <h2>满意的点 <span class="hint">可多选</span></h2><div id="positive-points" class="feedback-points"></div>
+      <h2>不满意的点 <span class="hint">可多选</span></h2><div id="negative-points" class="feedback-points"></div>
     </div>
-    <div class="score-row" data-dim="quality">
-      <label for="score-quality">视觉质量<span id="ai-quality" class="ai-score"></span></label><input id="score-quality" type="number" min="1" max="5" step="1">
-    </div>
-    <div class="score-row" data-dim="aesthetics">
-      <label for="score-aesthetics">美学<span id="ai-aesthetics" class="ai-score"></span></label><input id="score-aesthetics" type="number" min="1" max="5" step="1">
-    </div>
+    <textarea id="note" aria-label="补充说明" placeholder="补充说明（可选）：具体位置、问题或建议" rows="2"></textarea>
 
+    <h2>AI 评价</h2><div id="ai-feedback"></div>
+    <h2>可见缺陷检查 <span class="hint">visual-v2</span></h2><div id="review-checks"></div>
     <h2>AI 结论</h2><p id="ai-verdict" class="hint"></p><details><summary class="hint">展开图片观察</summary><p id="ai-observation" class="hint"></p></details>
     <h2>AI 需求清单</h2>
     <ul id="requirements" class="requirements"></ul>
 
     <details><summary class="hint">子项理由</summary><div id="subscores" class="hint"></div></details>
-    <input id="reason-general" aria-label="修正理由" placeholder="修正理由（可选）" style="margin-top: 8px">
-    <textarea id="note" aria-label="备注" placeholder="备注（可选）" rows="2"></textarea>
 
     <div id="error-banner" class="hint hidden"></div>
     <div class="actions">
-      <button id="btn-accept" class="primary">接受全部 (A)</button>
-      <button id="btn-save">保存修正 (Enter)</button>
+      <button id="btn-save" class="primary">保存评价 (Enter)</button>
       <button id="btn-skip">跳过 (S)</button>
       <button id="btn-retry" class="hidden">重试本条</button>
     </div>
@@ -103,8 +160,20 @@
   </div>
 </div>
 
-<script src="/static/api.js"></script>
-<script src="/static/app.js"></script>
-<script src="/static/review.js"></script>
+<dialog id="preview-dialog" aria-labelledby="preview-title">
+  <div class="preview-heading"><h2 id="preview-title">图片预览</h2><button id="preview-close" aria-label="关闭图片预览">关闭 ×</button></div>
+  <div class="preview-body"><img id="preview-image" alt=""><aside><span id="preview-position" class="section-eyebrow"></span><h3>原始提示词</h3><p id="preview-query"></p><details id="preview-pe" class="hidden"><summary>实际生图提示词 / PE 来源</summary><p id="preview-generation-prompt"></p><p id="preview-pe-meta" class="hint"></p></details><p id="preview-scores" class="hint"></p><h3>可见缺陷检查</h3><div id="preview-checks"></div><a id="preview-original" target="_blank" rel="noopener">打开原图 ↗</a></aside></div>
+  <div class="preview-footer"><button id="preview-prev">← 上一张</button><span class="hint">← → 切换 · Esc 关闭</span><button id="preview-next">下一张 →</button></div>
+</dialog>
+<script src="/static/checks.js?v=20261102-feedback"></script>
+<script src="/static/api.js?v=20261102-feedback"></script>
+<script src="/static/app.js?v=20261102-feedback"></script>
+<script src="/static/review.js?v=20261102-feedback"></script>
+<script src="/static/generation.js?v=20261102-feedback"></script>
+<script src="/static/workflow.js?v=20261102-feedback"></script>
+<script src="/static/experience.js?v=20261102-feedback"></script>
+<script src="/static/expansion.js?v=20261102-feedback"></script>
+
+<script src="/static/comparison.js?v=20261102-feedback"></script>
 </body>
 </html>

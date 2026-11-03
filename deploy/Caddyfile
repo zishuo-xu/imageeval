@@ -1,0 +1,14 @@
+{
+    admin off
+}
+http://:8878 {
+    basicauth {
+        admin {$IMAGEEVAL_LOGIN_HASH}
+    }
+    header X-Content-Type-Options nosniff
+    header Referrer-Policy same-origin
+    request_body {
+        max_size 100MB
+    }
+    reverse_proxy 127.0.0.1:8877
+}

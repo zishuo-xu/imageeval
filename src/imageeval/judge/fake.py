@@ -12,6 +12,7 @@ from ..models import (
     SubScore,
     Subscores,
 )
+from ..feedback import Feedback
 from .base import JudgeResponse, RetryableJudgeError
 
 
@@ -45,6 +46,7 @@ class FakeProvider:
 
         started = time.perf_counter()
         output = JudgeOutput(
+            feedback=Feedback(rating="满意", positive_points=["符合提示词"], explanation="模拟评价，仅用于功能测试"),
             observation=f"fake observation for {image_path.name}",
             requirements=[
                 Requirement(

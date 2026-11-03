@@ -101,7 +101,7 @@ def _save_ok(
             scores.aesthetics,
             scores.overall,
             json.dumps(payload["requirements"], ensure_ascii=False),
-            json.dumps(payload["subscores"], ensure_ascii=False),
+            json.dumps({**payload["subscores"], "feedback": payload.get("feedback"), "quality_gate": payload.get("quality_gate")}, ensure_ascii=False),
             payload.get("observation", ""),
             payload.get("verdict", ""),
             response.raw,

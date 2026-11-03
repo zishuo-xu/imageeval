@@ -17,11 +17,12 @@ def test_migrate_creates_tables_and_is_idempotent(db: Database) -> None:
         "runs",
         "evaluations",
         "reviews",
+        "comparison_votes",
         "v_evaluation_state",
     } <= names
 
     migrate(db.conn)
-    assert db.query_one("SELECT version FROM schema_version")["version"] == 1
+    assert db.query_one("SELECT version FROM schema_version")["version"] == 3
 
     columns = db.query("PRAGMA table_info(schema_version)")
     assert [(row["name"], row["pk"]) for row in columns] == [("version", 1)]

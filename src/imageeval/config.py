@@ -14,10 +14,19 @@ class JudgeConfig:
     base_url: str = ""
     model: str = ""
     api_key_env: str = "IMAGEEVAL_API_KEY"
+    json_mode: bool = False
     temperature: float = 0.2
-    max_tokens: int = 1200
+    max_tokens: int = 8192
     timeout_s: float = 90.0
     image_max_edge: int = 1280
+
+
+@dataclass(frozen=True)
+class GenerationConfig:
+    base_url: str = "https://api.minimax.cn/v1"
+    model: str = "image-01"
+    api_key_env: str = "MINIMAX_API_KEY"
+    timeout_s: float = 180.0
 
 
 @dataclass(frozen=True)
@@ -36,6 +45,8 @@ class AppConfig:
     rubric_path: Path = DEFAULT_RUBRIC
     judge: JudgeConfig = field(default_factory=JudgeConfig)
     pipeline: PipelineConfig = field(default_factory=PipelineConfig)
+    generation: GenerationConfig = field(default_factory=GenerationConfig)
+    pe: JudgeConfig | None = None
 
     @property
     def db_path(self) -> Path:
@@ -80,4 +91,6 @@ def load_config(path: Path | None = None, data_dir: Path | None = None) -> AppCo
         rubric_path=Path(raw["rubric_path"]) if "rubric_path" in raw else DEFAULT_RUBRIC,
         judge=JudgeConfig(**judge),
         pipeline=PipelineConfig(**pipeline),
+        generation=GenerationConfig(**raw.get("generation", {})),
+        pe=JudgeConfig(**raw["pe"]) if "pe" in raw else None,
     )

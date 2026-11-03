@@ -13,7 +13,7 @@ MODES = ("raw", "sft", "only-reviewed")
 
 
 def _reviewed(decision: str | None) -> bool:
-    return decision in ("accepted", "corrected")
+    return decision in ("accepted", "corrected", "rated")
 
 
 def export_dataset(db: Database, cfg: AppConfig, run_id: str, mode: str) -> Path:
@@ -25,11 +25,11 @@ def export_dataset(db: Database, cfg: AppConfig, run_id: str, mode: str) -> Path
         raise LookupError(f"run not found: {run_id}")
 
     rows = db.query(
-        "SELECT s.id AS sample_id, s.query_text, s.image_path, s.model_name, s.tags_json, "
+        "SELECT s.id AS sample_id, s.query_text, s.image_path, s.model_name, s.tags_json, s.metadata_json, "
         "e.adherence_score, e.quality_score, e.aesthetics_score, e.overall_score, "
         "e.requirements_json, e.subscores_json, e.verdict, "
         "r.decision, r.human_adherence, r.human_quality, r.human_aesthetics, r.human_overall, "
-        "r.reasons_json, r.note, r.reviewer, r.duration_ms AS review_duration_ms "
+        "r.feedback_json, r.reasons_json, r.note, r.reviewer, r.duration_ms AS review_duration_ms "
         "FROM samples s "
         "JOIN runs rn ON rn.batch_id = s.batch_id AND rn.id = ? "
         "JOIN evaluations e ON e.sample_id = s.id AND e.run_id = rn.id AND e.status = 'ok' "
@@ -67,6 +67,7 @@ def export_dataset(db: Database, cfg: AppConfig, run_id: str, mode: str) -> Path
             "aesthetics": row["aesthetics_score"],
             "overall": row["overall_score"],
         }
+        feedback = json.loads(row["feedback_json"] or "{}") or None
         if reviewed:
             gold += 1
             final_scores = {
@@ -83,6 +84,7 @@ def export_dataset(db: Database, cfg: AppConfig, run_id: str, mode: str) -> Path
                 "note": row["note"] or "",
                 "reviewer": row["reviewer"],
                 "decision": row["decision"],
+                "feedback": feedback,
                 "reasons": json.loads(row["reasons_json"] or "{}"),
             }
             label_quality = "gold"
@@ -94,17 +96,25 @@ def export_dataset(db: Database, cfg: AppConfig, run_id: str, mode: str) -> Path
             label_quality = "silver"
             final_source = "ai"
 
+        final_feedback = feedback if reviewed else json.loads(row["subscores_json"] or "{}").get("feedback")
+        if final_feedback:
+            final_scores = None
+
         if mode == "sft":
             records.append(
                 {
                     "image": image_rel,
                     "query": row["query_text"],
-                    "label": final_scores,
+                "prompt_expansion": json.loads(row["metadata_json"]).get("prompt_expansion"),
+                "comparison": json.loads(row["metadata_json"]).get("comparison"),
+                    "label": feedback if feedback else final_scores,
+                    "label_type": "satisfaction" if feedback else "scores",
                     "label_quality": label_quality,
                     "meta": {
                         "sample_id": row["sample_id"],
                         "rubric_version": run["rubric_version"],
                         "reviewer": row["reviewer"],
+                        "note": row["note"] or "",
                         "model_name": row["model_name"],
                     },
                 }
@@ -115,6 +125,8 @@ def export_dataset(db: Database, cfg: AppConfig, run_id: str, mode: str) -> Path
             {
                 "sample_id": row["sample_id"],
                 "query": row["query_text"],
+                "prompt_expansion": json.loads(row["metadata_json"]).get("prompt_expansion"),
+                "comparison": json.loads(row["metadata_json"]).get("comparison"),
                 "image": image_rel,
                 "model_name": row["model_name"],
                 "tags": json.loads(row["tags_json"] or "[]"),
@@ -123,6 +135,7 @@ def export_dataset(db: Database, cfg: AppConfig, run_id: str, mode: str) -> Path
                 "judge": {"provider": run["provider"], "model": run["judge_model"]},
                 "ai": {
                     **ai_scores,
+                    "feedback": json.loads(row["subscores_json"] or "{}").get("feedback"),
                     "requirements": json.loads(row["requirements_json"] or "[]"),
                     "subscores": json.loads(row["subscores_json"] or "{}"),
                     "verdict": row["verdict"],
@@ -130,6 +143,7 @@ def export_dataset(db: Database, cfg: AppConfig, run_id: str, mode: str) -> Path
                 "human": human,
                 "final": {
                     "scores": final_scores,
+                    "feedback": final_feedback,
                     "source": final_source,
                     "label_quality": label_quality,
                 },

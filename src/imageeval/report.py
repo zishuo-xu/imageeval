@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .db import Database
+from .feedback import RATINGS
 from .review import counts
 from .rubric.loader import Rubric
 from .storage import resolve_under
@@ -77,8 +78,8 @@ def _latest_reviews(db: Database, run_id: str) -> list:
     return db.query(
         "SELECT s.id AS sample_id, s.query_text, s.image_path, s.thumb_path, "
         "e.id AS evaluation_id, e.adherence_score, e.quality_score, e.aesthetics_score, "
-        "e.overall_score, e.requirements_json, e.verdict, "
-        "r.human_adherence, r.human_quality, r.human_aesthetics, r.human_overall, r.decision "
+        "e.overall_score, e.requirements_json, e.subscores_json, e.verdict, "
+        "r.human_adherence, r.human_quality, r.human_aesthetics, r.human_overall, r.decision, r.feedback_json "
         "FROM evaluations e "
         "JOIN samples s ON s.id = e.sample_id "
         "JOIN reviews r ON r.id = ("
@@ -125,7 +126,8 @@ def build_summary(db: Database, run_id: str, rubric: Rubric) -> dict:
         "accepted": state_counts.get("accepted", 0),
         "corrected": state_counts.get("corrected", 0),
         "skipped": state_counts.get("skipped", 0),
-        "reviewed": state_counts.get("accepted", 0) + state_counts.get("corrected", 0),
+        "reviewed": state_counts.get("accepted", 0) + state_counts.get("corrected", 0) + state_counts.get("rated", 0),
+        "rated": state_counts.get("rated", 0),
     }
 
     ai_values = {
@@ -185,18 +187,20 @@ def build_summary(db: Database, run_id: str, rubric: Rubric) -> dict:
     category_rows.sort(key=lambda row: (-row["failure_rate"], -row["total"]))
 
     reviewed_samples = []
-    for row in scored[:200]:
+    for row in [r for r in reviewed if r["decision"] != "skipped"][:200]:
         reviewed_samples.append(
             {
                 "sample_id": row["sample_id"],
                 "query": row["query_text"],
                 "ai": {
+                    "feedback": json.loads(row["subscores_json"] or "{}").get("feedback"),
                     "adherence": row["adherence_score"],
                     "quality": row["quality_score"],
                     "aesthetics": row["aesthetics_score"],
                     "overall": row["overall_score"],
                 },
                 "human": {
+                    "feedback": json.loads(row["feedback_json"]) or None,
                     "adherence": row["human_adherence"],
                     "quality": row["human_quality"],
                     "aesthetics": row["human_aesthetics"],
@@ -236,7 +240,25 @@ def build_summary(db: Database, run_id: str, rubric: Rubric) -> dict:
     corrected = state_counts.get("corrected", 0)
     acceptance_rate = round(accepted / (accepted + corrected), 3) if (accepted + corrected) else None
 
+    def feedback_summary(items):
+        items = [item for item in items if item]
+        ratings = {rating: 0 for rating in RATINGS}
+        positive, negative = {}, {}
+        for item in items:
+            ratings[item['rating']] += 1
+            for key, target in [('positive_points', positive), ('negative_points', negative)]:
+                for point in item[key]:
+                    target[point] = target.get(point, 0) + 1
+        return {'total': len(items), 'ratings': ratings,
+                'satisfied_rate': round((ratings['非常满意'] + ratings['满意']) / len(items), 3) if items else None,
+                'positive_points': dict(sorted(positive.items(), key=lambda p: -p[1])),
+                'negative_points': dict(sorted(negative.items(), key=lambda p: -p[1]))}
+
     return {
+        "feedback": {
+            "ai": feedback_summary([json.loads(r['subscores_json'] or '{}').get('feedback') for r in ai_rows]),
+            "human": feedback_summary([json.loads(r['feedback_json']) for r in reviewed if r['decision'] == 'rated']),
+        },
         "run": dict(run),
         "counts": summary_counts,
         "means": {

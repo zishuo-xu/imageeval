@@ -111,7 +111,16 @@ LEFT JOIN (
 ) lr ON lr.evaluation_id = e.id AND lr.rn = 1;
 """
 
-MIGRATIONS: dict[int, str] = {1: SCHEMA_V1}
+MIGRATIONS: dict[int, str] = {1: SCHEMA_V1, 2: """
+CREATE TABLE comparison_votes (
+    experiment_id TEXT NOT NULL,
+    pair_id TEXT NOT NULL,
+    winner TEXT NOT NULL CHECK(winner IN ('A', 'B', 'tie')),
+    note TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (experiment_id, pair_id)
+);
+""", 3: "ALTER TABLE reviews ADD COLUMN feedback_json TEXT NOT NULL DEFAULT '{}';"}
 
 
 def migrate(conn: sqlite3.Connection) -> None:

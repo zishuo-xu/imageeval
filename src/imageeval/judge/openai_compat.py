@@ -58,6 +58,8 @@ class OpenAICompatProvider:
             "temperature": self._cfg.temperature,
             "max_tokens": self._cfg.max_tokens,
         }
+        if self._cfg.json_mode:
+            payload["response_format"] = {"type": "json_object"}
         try:
             response = await self._client.post(
                 f"{self._cfg.base_url.rstrip('/')}/chat/completions",
@@ -79,6 +81,9 @@ class OpenAICompatProvider:
             content = data["choices"][0]["message"]["content"]
         except Exception as exc:
             raise FatalJudgeError(f"malformed response envelope: {exc}") from exc
+
+        if data["choices"][0].get("finish_reason") == "length":
+            raise FatalJudgeError("评分输出达到 max_tokens 上限被截断，请提高输出上限后新建评测")
 
         if isinstance(content, list):
             content = "".join(
@@ -106,13 +111,39 @@ class OpenAICompatProvider:
             total_out += _as_int(usage.get("completion_tokens"))
             try:
                 parsed = parse_judge_output(content)
+                if parsed.feedback is None or not parsed.feedback.explanation.strip():
+                    raise ValueError("feedback with rating, positive_points, negative_points and explanation is required")
+                if parsed.feedback.rating in ("非常满意", "满意") and not parsed.feedback.positive_points:
+                    raise ValueError("satisfied feedback needs at least one positive point")
+                if parsed.feedback.rating in ("不满意", "非常不满意") and not parsed.feedback.negative_points:
+                    raise ValueError("dissatisfied feedback needs at least one negative point")
+                if parsed.feedback.rating in ("非常满意", "满意") and (any(c.status in ("major", "severe") for c in parsed.subscores.checks) or any(r.criticality == "critical" and r.status in ("missing", "contradicted") for r in parsed.requirements)):
+                    raise ValueError("major defects or unmet critical requirements cannot be rated satisfied")
+                gate = parsed.quality_gate
+                if gate is None:
+                    raise ValueError("quality_gate with delivery, required_edits, excellence is required")
+                rating = parsed.feedback.rating
+                if gate.delivery == "minor_edits" and rating in ("非常满意", "满意"):
+                    raise ValueError("required local edits cap satisfaction at 一般")
+                if gate.delivery == "major_edits" and rating not in ("不满意", "非常不满意"):
+                    raise ValueError("major edits cap satisfaction at 不满意")
+                if gate.delivery == "unusable" and rating != "非常不满意":
+                    raise ValueError("unusable must be rated 非常不满意")
+                if rating in ("非常满意", "满意") and any(r.status != "satisfied" for r in parsed.requirements):
+                    raise ValueError("unmet or partial explicit requirements cannot be rated satisfied")
+                if rating == "非常满意" and (len(gate.excellence) < 2 or parsed.feedback.negative_points or parsed.notable_issues or any(c.status in ("minor", "major", "severe") for c in parsed.subscores.checks)):
+                    raise ValueError("非常满意 needs two distinct outstanding evidence items and no identified issues")
+                if any(c.status == "severe" for c in parsed.subscores.checks) and rating != "非常不满意":
+                    raise ValueError("severe unusable structural defects must be rated 非常不满意")
+                if not parsed.subscores.checks:
+                    raise ValueError("subscores.checks is required: include all 12 visual checks")
             except Exception as exc:
                 last_error = exc
                 messages = messages + [
                     {"role": "assistant", "content": content},
                     {
                         "role": "user",
-                        "content": f"输出不合法：{exc}。只输出符合 schema 的 JSON 对象，不要输出其他文字。",
+                        "content": f"输出不合法：{exc}。只输出完整 JSON；subscores.checks 必须含全部 12 项，不可放在顶层或 quality 内。不要输出其他文字。",
                     },
                 ]
                 continue

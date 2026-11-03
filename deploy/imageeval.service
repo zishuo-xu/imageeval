@@ -1,0 +1,24 @@
+[Unit]
+Description=ImageEval image generation and quality review
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=imageeval
+Group=imageeval
+WorkingDirectory=/opt/imageeval/current
+EnvironmentFile=/etc/imageeval/runtime.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/imageeval/current/.venv/bin/python -m imageeval --config /etc/imageeval/config.toml --data-dir /var/lib/imageeval serve --host 127.0.0.1 --port 8877
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=210
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/imageeval
+
+[Install]
+WantedBy=multi-user.target

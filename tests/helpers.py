@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from imageeval.checks import CHECKS
+
 
 def valid_judge_payload(score: int = 4) -> dict:
     def sub(value: int) -> dict:
         return {"score": value, "reason": "理由"}
 
     return {
+        "quality_gate": {"delivery": "ready", "required_edits": [], "excellence": []},
+        "feedback": {"rating": "满意", "positive_points": ["符合提示词"], "negative_points": [], "explanation": "画面中央猫的主体符合原始需求"},
         "observation": "画面中有一只红色的猫。",
         "requirements": [
             {
@@ -18,6 +22,7 @@ def valid_judge_payload(score: int = 4) -> dict:
         ],
         "intent_alignment": score,
         "subscores": {
+            "checks": [{"key":key,"status":"not_applicable","location":"测试图","evidence":"离线格式测试"} for key in CHECKS],
             "quality": {
                 "clarity": sub(score),
                 "artifacts": sub(score),

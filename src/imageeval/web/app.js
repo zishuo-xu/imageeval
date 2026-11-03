@@ -1,4 +1,4 @@
-const app = { runId: null, pollTimer: null, lastStatus: null, lastRun: null, messageTimer: null };
+const app = { runId: localStorage.getItem("imageeval.run"), pollTimer: null, lastStatus: null, lastRun: null, messageTimer: null };
 
 function flashMessage(text) {
   const node = qs("run-message");
@@ -11,7 +11,10 @@ function flashMessage(text) {
 
 const runLabels = { running: "评分中", completed: "已完成", paused: "已暂停", pending: "待开始", created: "待开始", cancelled: "已取消" };
 
+const runStatusText = run => run.status === "completed" && run.failed > 0 ? "完成 · 有失败" : (runLabels[run.status] || run.status);
+
 function updateControls(run) {
+  qs("btn-upgrade-run").disabled = false;
   const start = qs("btn-start");
   const pause = qs("btn-pause");
   const finished = run.status === "completed" && run.failed === 0;
@@ -21,7 +24,7 @@ function updateControls(run) {
     : run.status === "completed" && run.failed > 0
       ? "重试失败样本"
       : "开始评分";
-  start.title = finished ? "该评测已全部评分完成；如需重跑请新建评测" : "";
+  start.title = finished ? "该评测已全部评分完成；如需重跑请新建质检任务" : "";
   pause.disabled = run.status !== "running";
 }
 
@@ -49,7 +52,7 @@ async function refreshRuns() {
   const select = qs("run-select");
   select.disabled = !runs.length;
   select.innerHTML = runs
-    .map((r) => `<option value="${r.id}">${escapeHtml(r.name)} · ${runLabels[r.status] || r.status} · ${r.done}/${r.total}</option>`)
+    .map((r) => `<option value="${r.id}">${escapeHtml(r.name)} · ${runStatusText(r)} · ${r.done}/${r.total}</option>`)
     .join("") || '<option value="">尚未创建评测</option>';
   if (runs.length) {
     const preferred = app.runId && runs.some((r) => r.id === app.runId) ? app.runId : runs[0].id;
@@ -61,6 +64,7 @@ async function refreshRuns() {
 function setRun(runId) {
   clearTimeout(app.pollTimer);
   app.runId = runId;
+  localStorage.setItem("imageeval.run", runId);
   app.lastRun = null;
   app.lastStatus = null;
   qs("run-message").textContent = "";
@@ -83,9 +87,10 @@ async function pollRun() {
     app.lastRun = run;
     qs("judge-status").textContent = `本次裁判：${run.provider === "fake" ? "模拟裁判" : run.judge_model} · ${run.provider === "fake" ? "非真实评分" : "真实模型"}`;
     const option = [...qs("run-select").options].find(option => option.value === runId);
-    if (option) option.textContent = `${run.name} · ${runLabels[run.status] || run.status} · ${run.done}/${run.total}`;
-    qs("run-progress").textContent = `${runLabels[run.status] || run.status} · 已评分 ${run.done} / ${run.total} · 失败 ${run.failed}`;
+    if (option) option.textContent = `${run.name} · ${runStatusText(run)} · ${run.done}/${run.total}`;
+    qs("run-progress").textContent = `${runStatusText(run)} · 已评分 ${run.done} / ${run.total} · 失败 ${run.failed}`;
     updateControls(run);
+    window.dispatchEvent(new CustomEvent("run-updated", {detail: {run}}));
     if (run.status !== app.lastStatus) {
       app.lastStatus = run.status;
       window.dispatchEvent(new CustomEvent("run-status", { detail: { run } }));
@@ -104,14 +109,16 @@ async function createRun() {
     alert("请先导入数据");
     return;
   }
-  const name = qs("run-name").value.trim() || "未命名评测";
+  const name = qs("run-name").value.trim() || "未命名质检任务";
   qs("btn-create-run").disabled = true;
   try {
     const result = await postJSON("/api/runs", { name, batch_id: batchId });
     app.runId = result.run_id;
     await refreshRuns();
     qs("run-select").value = result.run_id;
-    flashMessage("评测已创建，点击开始评分");
+    qs("run-builder").classList.add("hidden");
+    qs("btn-manage-runs").setAttribute("aria-expanded", "false");
+    flashMessage("质检任务已创建，点击开始评分");
   } catch (err) { flashMessage(`创建失败：${err.message}`); }
   finally { qs("btn-create-run").disabled = false; }
 }
@@ -120,7 +127,7 @@ async function startRun() {
   if (!app.runId) return;
   const run = app.lastRun;
   if (run && run.status === "completed" && run.failed === 0) {
-    flashMessage("该评测已全部评分完成，无需重复评分；如需重跑请新建评测");
+    flashMessage("该评测已全部评分完成，无需重复评分；如需重跑请新建质检任务");
     return;
   }
   try {
@@ -173,11 +180,24 @@ async function submitImport() {
     await refreshBatches();
     qs("batch-select").value = result.batch_id;
     qs("btn-import-cancel").textContent = "完成";
+    showWorkflowStage("score");
+    qs("run-builder").classList.remove("hidden");
+    qs("btn-manage-runs").setAttribute("aria-expanded", "true");
   } catch (err) { qs("import-result").textContent = `导入失败：${err.message}`; }
   finally { qs("btn-import-submit").disabled = false; }
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
+  qs("btn-upgrade-run").onclick = async () => {
+    if (!app.runId) return;
+    qs("btn-upgrade-run").disabled = true;
+    try {
+      const result = await postJSON(`/api/runs/${app.runId}/upgrade`,{});
+      app.runId = result.run_id; await refreshRuns();
+      showWorkflowStage("score"); flashMessage("已保留历史结果并创建新的质检任务，点击开始评分。无需重新生图。");
+    } catch(err) { flashMessage(err.message); }
+    finally { qs("btn-upgrade-run").disabled = false; }
+  };
   qs("btn-create-run").onclick = createRun;
   qs("btn-start").onclick = startRun;
   qs("btn-pause").onclick = pauseRun;

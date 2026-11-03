@@ -10,14 +10,14 @@ def test_index_and_static_assets(cfg) -> None:
         index = client.get("/")
         assert index.status_code == 200
         for marker in (
-            "btn-accept",
+            "satisfaction-options",
             "requirements",
             "image",
             "run-select",
             "btn-retry",
             "error-banner",
             'value="error"',
-            "reason-general",
+            "negative-points",
             "run-message",
         ):
             assert marker in index.text
@@ -39,5 +39,5 @@ def test_index_and_static_assets(cfg) -> None:
         assert "loadQueue" in js.text
         assert "retryEvaluation" in js.text
         assert "escapeHtml(value.reason" in js.text
-        assert "prefill(" in js.text
-        assert "Math.round(ai)" in js.text
+        assert "renderFeedback(" in js.text
+        assert "Math.round(ai)" not in js.text

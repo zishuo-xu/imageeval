@@ -4,6 +4,8 @@ import json
 import uuid
 
 from .config import AppConfig
+from .checks import CHECKLIST_VERSION
+from .feedback import RATING_POLICY_VERSION
 from .db import Database
 from .judge.prompts import prompt_hash
 from .rubric.loader import Rubric
@@ -21,7 +23,11 @@ def create_run(
     )["c"]
     run_id = str(uuid.uuid4())
     params = {
+        "rating_policy": RATING_POLICY_VERSION,
+        "checklist_version": CHECKLIST_VERSION,
         "temperature": cfg.judge.temperature,
+        "json_mode": cfg.judge.json_mode,
+        "max_tokens": cfg.judge.max_tokens,
         "image_max_edge": cfg.judge.image_max_edge,
         "max_concurrency": cfg.pipeline.max_concurrency,
         "rpm": cfg.pipeline.rpm,

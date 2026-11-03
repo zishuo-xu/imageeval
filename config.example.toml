@@ -8,7 +8,8 @@ base_url = "https://your-endpoint.example.com/v1"
 model = "your-vision-model"
 api_key_env = "IMAGEEVAL_API_KEY"
 temperature = 0.2
-max_tokens = 1200
+max_tokens = 32768
+json_mode = true # 需模型接口支持 JSON Object 输出
 timeout_s = 90
 image_max_edge = 1280
 
@@ -19,3 +20,18 @@ max_retries = 3
 
 [reviewer]
 default_name = "local"
+
+[generation]
+base_url = "https://api.minimax.cn/v1"
+model = "image-01"
+api_key_env = "MINIMAX_API_KEY"
+timeout_s = 180
+
+# Optional dedicated prompt-expansion model. Without [pe], reuse [judge] for text expansion.
+# [pe]
+# base_url = "https://your-provider.example/v1"
+# model = "your-pe-model"
+# api_key_env = "IMAGEEVAL_PE_API_KEY"
+# temperature = 0.2
+# max_tokens = 2000
+# timeout_s = 90

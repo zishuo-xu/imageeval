@@ -1,0 +1,22 @@
+[Unit]
+Description=ImageEval login gateway
+After=network-online.target imageeval.service
+Wants=network-online.target
+
+[Service]
+User=imageeval-web
+Group=imageeval-web
+Environment=XDG_DATA_HOME=/var/lib/imageeval-web
+Environment=XDG_CONFIG_HOME=/var/lib/imageeval-web
+EnvironmentFile=/etc/imageeval/web.env
+ExecStart=/opt/imageeval/caddy/usr/bin/caddy run --config /etc/imageeval/Caddyfile --adapter caddyfile
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/imageeval-web
+
+[Install]
+WantedBy=multi-user.target

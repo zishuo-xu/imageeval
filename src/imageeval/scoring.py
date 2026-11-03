@@ -67,6 +67,10 @@ def compute_overall(
 def compute_scores(output: JudgeOutput, rubric: Rubric) -> EvaluationScores:
     adherence = aggregate_adherence(output.requirements, output.intent_alignment)
     quality = _dimension_score(dict(output.subscores.quality), rubric.subscore_weights["quality"])
+    # A visibly defective subject must not score highly through averaging.
+    severities = {item.status for item in output.subscores.checks}
+    cap = 2.0 if "severe" in severities else 3.0 if "major" in severities else 4.0 if "minor" in severities else 5.0
+    quality = min(quality, cap)
     aesthetics = _dimension_score(
         dict(output.subscores.aesthetics), rubric.subscore_weights["aesthetics"]
     )

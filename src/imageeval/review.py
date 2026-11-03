@@ -12,7 +12,7 @@ from .util import round_half_up, utcnow
 
 QUEUE_FILTERS = {
     "pending": "st.state = 'ai_done'",
-    "reviewed": "st.state IN ('accepted', 'corrected')",
+    "reviewed": "st.state IN ('accepted', 'corrected', 'rated')",
     "skipped": "st.state = 'skipped'",
     "error": "st.state = 'error'",
     "all": "1 = 1",
@@ -37,7 +37,7 @@ LEFT JOIN reviews r ON r.id = (
 """
 
 _SELECT = """
-SELECT s.id AS sample_id, s.query_text, s.image_path, s.thumb_path, s.model_name, s.tags_json,
+SELECT s.id AS sample_id, s.query_text, s.image_path, s.thumb_path, s.model_name, s.tags_json, s.metadata_json,
        e.id AS evaluation_id, e.status AS eval_status,
        e.adherence_score, e.quality_score, e.aesthetics_score, e.overall_score,
        e.requirements_json, e.subscores_json, e.observation, e.verdict,
@@ -45,7 +45,7 @@ SELECT s.id AS sample_id, s.query_text, s.image_path, s.thumb_path, s.model_name
        st.state,
        r.id AS review_id, r.decision, r.human_adherence, r.human_quality,
        r.human_aesthetics, r.human_overall, r.note AS review_note,
-       r.reasons_json, r.created_at AS reviewed_at,
+       r.reasons_json, r.feedback_json, r.created_at AS reviewed_at,
        (COALESCE(ABS(r.human_adherence - e.adherence_score), 0)
         + COALESCE(ABS(r.human_quality - e.quality_score), 0)
         + COALESCE(ABS(r.human_aesthetics - e.aesthetics_score), 0)) AS correction
@@ -57,6 +57,7 @@ def _row_to_item(row) -> dict:
     if row["review_id"] is not None:
         human = {
             "decision": row["decision"],
+            "feedback": json.loads(row["feedback_json"]) or None,
             "adherence": row["human_adherence"],
             "quality": row["human_quality"],
             "aesthetics": row["human_aesthetics"],
@@ -71,11 +72,13 @@ def _row_to_item(row) -> dict:
         "eval_status": row["eval_status"],
         "state": row["state"],
         "query": row["query_text"],
+        "prompt_expansion": json.loads(row["metadata_json"]).get("prompt_expansion"),
         "image_url": f"/api/samples/{row['sample_id']}/image?size=orig",
         "thumb_url": f"/api/samples/{row['sample_id']}/image?size=thumb",
         "model_name": row["model_name"],
         "tags": json.loads(row["tags_json"] or "[]"),
         "ai": {
+            "feedback": json.loads(row["subscores_json"] or "{}").get("feedback"),
             "adherence": row["adherence_score"],
             "quality": row["quality_score"],
             "aesthetics": row["aesthetics_score"],
@@ -147,8 +150,8 @@ def submit_review(
     review_id = str(uuid.uuid4())
     db.execute(
         "INSERT INTO reviews (id, evaluation_id, reviewer, decision, human_adherence, "
-        "human_quality, human_aesthetics, human_overall, reasons_json, note, duration_ms, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "human_quality, human_aesthetics, human_overall, reasons_json, note, duration_ms, created_at, feedback_json) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             review_id,
             evaluation_id,
@@ -162,10 +165,12 @@ def submit_review(
             payload.note,
             payload.duration_ms,
             utcnow(),
+            payload.feedback.model_dump_json() if payload.feedback else "{}",
         ),
     )
     return {
         "review_id": review_id,
+        "feedback": payload.feedback.model_dump() if payload.feedback else None,
         "decision": payload.decision,
         "human_adherence": adherence,
         "human_quality": quality,
